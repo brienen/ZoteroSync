@@ -1,0 +1,3 @@
+Title,Abstract Note,Author,Publication Year,Date,DOI,Url,Manual Tags,Automatic Tags
+Sample Article One,This is a test abstract,"Smith, John; Doe, Jane",2020,2020-05-01,10.1234/exampledoi1,http://example.com/article1,"tag1; tag2",auto1
+Another Sample,Another abstract example,"Brown, Alice",2021,2021-07-15,10.2345/exampledoi2,http://example.com/article2,tag3,auto2
