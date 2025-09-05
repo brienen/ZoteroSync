@@ -1,0 +1,16 @@
+{
+  "_checkout": null,
+  "_output_dir": "/Users/arjen/kDrive/Development",
+  "_repo_dir": "/Users/arjen/.cookiecutters/cookiecutter-hypermodern-python",
+  "_template": "gh:cjolowicz/cookiecutter-hypermodern-python",
+  "author": "Arjen Brienen",
+  "copyright_year": "2025",
+  "development_status": "Development Status :: 3 - Alpha",
+  "email": "brienen@e-space.nl",
+  "friendly_name": "Zoterosync",
+  "github_user": "brienen",
+  "license": "GPL-3.0",
+  "package_name": "espace.zotsync",
+  "project_name": "ZoteroSync",
+  "version": "0.0.1"
+}
