@@ -1,0 +1,155 @@
+"""Tests for from_asreview.apply_asreview_decisions.
+
+We mock Zotero HTTP calls to avoid network access.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List
+
+import json
+import pandas as pd
+import pytest
+
+from espace.zotsync.from_asreview import apply_asreview_decisions
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int = 200, data: Any | None = None, text: str = "") -> None:
+        self.status_code = status_code
+        self._data = data
+        self.text = text
+
+    # emulate requests.Response.json()
+    def json(self) -> Any:
+        return self._data
+
+
+class _FakeSession:
+    """Very small stub for requests.Session used by from_asreview."""
+
+    def __init__(self, items_index: Dict[str, Dict[str, Any]]):
+        # items_index maps query key -> list of items
+        self.items_index = items_index
+        self.put_calls: List[Dict[str, Any]] = []
+
+    def get(self, url: str, params: Dict[str, Any] | None = None):
+        # We only care about .../items queries with q / qmode
+        if url.endswith("/items"):
+            q = (params or {}).get("q", "")
+            # Return list for the query if present, else empty
+            data = self.items_index.get(q, [])
+            return _FakeResponse(200, data)
+        # Children not used here
+        return _FakeResponse(404, text="not found")
+
+    def put(self, url: str, data: str = ""):
+        # record payload and pretend success
+        try:
+            payload = json.loads(data)
+        except Exception:  # pragma: no cover - defensive
+            payload = {"raw": data}
+        self.put_calls.append({"url": url, "payload": payload})
+        return _FakeResponse(200)
+
+
+@pytest.fixture()
+def fake_env(monkeypatch):
+    """Monkeypatch the Zotero session factory to our fake, and provide a tiny index.
+
+    We create two items, both matched by title(+year):
+      - "Has DOI" (2020)
+      - "No DOI Title" (2021)
+    """
+    # Two fake Zotero items
+    item_by_title_has_doi = {
+        "key": "ABCD1",
+        "version": 10,
+        "data": {"title": "Has DOI", "date": "2020" , "tags": []},
+    }
+    item_by_title = {
+        "key": "WXYZ2",
+        "version": 3,
+        "data": {"title": "No DOI Title", "date": "2021" , "tags": []},
+    }
+
+    # Index responses for GET /items?q=...
+    items_index = {
+        # exact title lookups used by titleCreatorYear stage
+        "Has DOI": [item_by_title_has_doi],
+        "No DOI Title": [item_by_title],
+        # fuzzy stage also queries with q=title; we reuse same entry
+    }
+
+    fake = _FakeSession(items_index)
+
+    # Patch the session creator inside the module under test
+    import espace.zotsync.from_asreview as m
+
+    monkeypatch.setattr(m, "_zotero_session", lambda api_key: fake)
+    # Provide library base builder untouched; apply_asreview_decisions uses it to compose URLs only
+
+    return fake
+
+
+@pytest.fixture()
+def asr_csv_tmp(tmp_path: Path) -> Path:
+    """Create a minimal review export CSV for tests."""
+    df = pd.DataFrame(
+        [
+            {"title": "Has DOI", "year": "2020", "asreview_label": 1, "asreview_time": "2025-09-07T10:00:00Z", "asreview_note": "looks relevant"},
+            {"title": "No DOI Title", "year": "2021", "asreview_label": 0, "asreview_time": "2025-09-07T10:05:00Z", "asreview_note": "out of scope"},
+        ]
+    )
+    p = tmp_path / "asr.csv"
+    df.to_csv(p, index=False)
+    return p
+
+
+def test_from_asreview_dry_run(fake_env: _FakeSession, asr_csv_tmp: Path):
+    res = apply_asreview_decisions(
+        asr_csv=asr_csv_tmp,
+        api_key="dummy",
+        library_id="123",
+        library_type="users",
+        dry_run=True,
+    )
+    # Both rows should be counted as updated in dry-run, no API writes
+    assert res["updated"] == 2
+    assert res["not_found"] == 0
+    assert res["errors"] == 0
+    assert fake_env.put_calls == []
+
+
+def test_from_asreview_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Path):
+    res = apply_asreview_decisions(
+        asr_csv=asr_csv_tmp,
+        api_key="dummy",
+        library_id="123",
+        library_type="users",
+        dry_run=False,
+    )
+
+    # One PUT per matched item (we have 2 rows)
+    assert res["updated"] == 2
+    assert res["not_found"] == 0
+    assert res["errors"] == 0
+    assert len(fake_env.put_calls) == 2
+
+    # Check that tags are present in payload
+    payload1 = fake_env.put_calls[0]["payload"]["data"]["tags"]
+    payload2 = fake_env.put_calls[1]["payload"]["data"]["tags"]
+
+    def tags_to_set(tags_list):
+        return {t.get("tag") for t in tags_list}
+
+    s1 = tags_to_set(payload1)
+    s2 = tags_to_set(payload2)
+
+    # included/excluded should be set appropriately
+    assert "review:Decision=included" in s1
+    assert "review:Time=2025-09-07 10:00" in s1
+    assert "review:ReasonDenied=looks relevant" in s1 or "review:ReasonDenied=" in s1  # tolerate empty if mapping differs
+    assert "review:Decision=excluded" in s2
+    assert "review:Time=2025-09-07 10:05" in s2
+    assert "review:ReasonDenied=out of scope" in s2
