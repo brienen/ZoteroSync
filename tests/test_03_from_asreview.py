@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Dict, List
+import sqlite3
 
 import json
 import pandas as pd
@@ -149,7 +150,45 @@ def test_from_asreview_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Pat
     # included/excluded should be set appropriately
     assert "review:Decision=included" in s1
     assert "review:Time=2025-09-07 10:00" in s1
-    assert "review:ReasonDenied=looks relevant" in s1 or "review:ReasonDenied=" in s1  # tolerate empty if mapping differs
+    assert "review:Reason=looks relevant" in s1 or "review:Reason=" in s1  # tolerate empty if mapping differs
     assert "review:Decision=excluded" in s2
     assert "review:Time=2025-09-07 10:05" in s2
-    assert "review:ReasonDenied=out of scope" in s2
+    assert "review:Reason=out of scope" in s2
+
+
+# Test: dry-run with a sqlite db
+def test_from_asreview_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
+    # Setup: kopieer een minimale Zotero sqlite database naar tmp_path
+    db_path = tmp_path / "zotero.sqlite"
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.executescript("""
+        CREATE TABLE libraries (libraryID INTEGER);
+        INSERT INTO libraries (libraryID) VALUES (1);
+        CREATE TABLE items (itemID INTEGER PRIMARY KEY, libraryID INTEGER, key TEXT);
+        INSERT INTO items (itemID, libraryID, key) VALUES (100, 1, 'ABCD1'), (101, 1, 'WXYZ2');
+        CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
+        INSERT INTO fields (fieldID, fieldName) VALUES (1, 'title');
+        CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value TEXT);
+        INSERT INTO itemDataValues (valueID, value) VALUES (1, 'Has DOI'), (2, 'No DOI Title');
+        CREATE TABLE itemData (itemID INTEGER, fieldID INTEGER, valueID INTEGER);
+        INSERT INTO itemData (itemID, fieldID, valueID) VALUES (100, 1, 1), (101, 1, 2);
+    """)
+    conn.commit()
+    conn.close()
+
+    from espace.zotsync.from_asreview import apply_asreview_decisions
+
+    res = apply_asreview_decisions(
+        asr_csv=asr_csv_tmp,
+        api_key="unused",
+        library_id="123",
+        library_type="users",
+        dry_run=True,
+        db_path=db_path,
+    )
+
+    # Verwacht: 2 gevonden, niets gemarkeerd als niet gevonden of error
+    assert res["updated"] == 2
+    assert res["not_found"] == 0
+    assert res["errors"] == 0

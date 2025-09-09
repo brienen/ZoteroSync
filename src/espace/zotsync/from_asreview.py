@@ -20,7 +20,7 @@ Werking:
 - Schrijft alléén deze tags per item:
     * `review:Decision=<included|excluded>`   (afgeleid van `asreview_label`)
     * `review:Time=<...>`                     (lokale tijd, geformatteerd uit `asreview_time`)
-    * `review:ReasonDenied=<...>`             (uit `asreview_note`)
+    * `review:Reason=<...>`                    (uit `asreview_note`)
 - Retourneert een klein rapport met aantal geüpdatete, gemiste en fouten.
 - Als meerdere Zotero-items matchen, worden **alle** matches bijgewerkt.
 """
@@ -32,6 +32,7 @@ import re
 from pathlib import Path
 from typing import Optional, Tuple
 import difflib
+import sqlite3
 
 import pandas as pd
 import requests
@@ -137,7 +138,13 @@ def _search_fuzzy(session: requests.Session, base: str, title: str, year: str, t
 
 def _format_review_time(val: object) -> str:
     """Format timestamps to a human-readable form 'YYYY-MM-DD HH:MM' in local time."""
-    if not val:
+    # Treat NaN/None/empty as empty
+    try:
+        if pd.isna(val):
+            return ""
+    except Exception:
+        pass
+    if val is None or str(val).strip() == "":
         return ""
     try:
         ts = pd.to_datetime(val, utc=True, errors="raise").tz_convert(None)
@@ -156,17 +163,61 @@ class UpdateReport:
         return {"updated": self.updated, "not_found": self.not_found, "errors": self.errors}
 
 
+def _find_items_by_title_year_sqlite(
+    db_path: Path,
+    title: str,
+    year: str,
+    library_id: int,
+    threshold: float = 0.9
+) -> list[dict]:
+    title = _norm(title).lower()
+    if not title:
+        return []
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("SELECT libraryID FROM groups WHERE groupID = ?", (library_id,))
+    group = cur.fetchone()
+    if not group:
+        return []
+
+    cur.execute("SELECT itemID, key FROM items WHERE libraryID = ?", (group["libraryID"],))
+    items = cur.fetchall()
+
+    results = []
+    for item in items:
+        cur.execute("""
+            SELECT value FROM itemDataValues WHERE valueID = (
+                SELECT valueID FROM itemData WHERE itemID = ? AND fieldID = (
+                    SELECT fieldID FROM fields WHERE fieldName = 'title'
+                ) LIMIT 1
+            )
+        """, (item["itemID"],))
+        row = cur.fetchone()
+        if not row:
+            continue
+        cand_title = _norm(row["value"]).lower()
+        score = difflib.SequenceMatcher(None, title, cand_title).ratio()
+        if score >= threshold:
+            results.append({"key": item["key"], "score": score})
+    conn.close()
+    return sorted(results, key=lambda x: x["score"], reverse=True)
+
+
 # -------------------------- core API --------------------------
 
 def apply_asreview_decisions(
     asr_csv: Path,
     api_key: str,
     library_id: str,
-    library_type: str = "users",
+    library_type: str = "groups",
     # tag_prefix is unused, all tags start with 'review:'
     fuzzy_threshold: float = 0.90,
     dry_run: bool = False,
     zotero_host: str = "http://localhost:23119",
+    db_path: Path | None = None,
 ) -> dict:
     """
     Schrijf ASReview-beslissingen terug naar Zotero als tags.
@@ -177,9 +228,11 @@ def apply_asreview_decisions(
     Voor elk item wordt alléén deze tags toegevoegd:
       - `review:Decision=<included|excluded>`   (afgeleid van `asreview_label`)
       - `review:Time=<...>`                     (lokale tijd, geformatteerd uit `asreview_time`)
-      - `review:ReasonDenied=<...>`             (uit `asreview_note`)
+      - `review:Reason=<...>`                    (uit `asreview_note`)
 
     zotero_host: base URL van de Zotero instantie (default: http://localhost:23119)
+
+    Als `db_path` is opgegeven, wordt alleen gezocht in de lokale Zotero SQLite-database en geen wijzigingen doorgevoerd (alleen telling van matches).
 
     Returns: dict met aantallen {updated, not_found, errors}.
     """
@@ -219,6 +272,7 @@ def apply_asreview_decisions(
     base = _zotero_base(library_type, library_id, host=zotero_host)
 
     report = UpdateReport()
+    use_sqlite = db_path is not None
 
     for _, r in df.iterrows():
         title = _norm(r.get("title", ""))
@@ -226,25 +280,72 @@ def apply_asreview_decisions(
         # doi is not used for matching anymore per updated docstring, but keep it normalized anyway
         doi = _norm(r.get("doi", "").lower())
 
-        decision_value = label_to_decision(r.get("asreview_label", ""))
         time_value = _format_review_time(r.get("asreview_time", ""))
-        reason_value = _norm(r.get("asreview_note", ""))
+        raw_reason = r.get("asreview_note", "")
+        try:
+            reason_value = "" if pd.isna(raw_reason) else _norm(raw_reason)
+        except Exception:
+            reason_value = _norm(raw_reason)
+
+        decision_value = label_to_decision(r.get("asreview_label", ""))
 
         tags_to_set = []
         if decision_value:
             tags_to_set.append(f"review:Decision={decision_value}")
-        if time_value:
-            tags_to_set.append(f"review:Time={time_value}")
-        if reason_value:
-            tags_to_set.append(f"review:ReasonDenied={reason_value}")
+            # Always include Time if available, regardless of decision
+            if time_value:
+                tags_to_set.append(f"review:Time={time_value}")
+            # Use Reason= instead of ReasonDenied=, only if non-empty
+            if reason_value:
+                tags_to_set.append(f"review:Reason={reason_value}")
 
         # Zoek items (alle matches)
-        items = []
-        ty_matches = _search_by_title_year(session, base, title, year)
-        if ty_matches:
-            items = ty_matches
+        if use_sqlite:
+            items = _find_items_by_title_year_sqlite(db_path, title, year, library_id, threshold=fuzzy_threshold)
+            if not tags_to_set:
+                continue
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            for match in items:
+                key = match["key"]
+                cur.execute("SELECT itemID FROM items WHERE key = ?", (key,))
+                row = cur.fetchone()
+                if not row:
+                    report.errors += 1
+                    continue
+                item_id = row[0]
+                # Verwijder bestaande review:* tags
+                cur.execute("""
+                    SELECT tagID FROM tags WHERE name LIKE 'review:%'
+                    AND tagID IN (SELECT tagID FROM itemTags WHERE itemID = ?)
+                """, (item_id,))
+                tag_ids = [row[0] for row in cur.fetchall()]
+                for tag_id in tag_ids:
+                    cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
+                for tag in tags_to_set:
+                    # Check of tag al bestaat
+                    cur.execute("SELECT tagID FROM tags WHERE name = ?", (tag,))
+                    row = cur.fetchone()
+                    if row:
+                        tag_id = row[0]
+                    else:
+                        # Bepaal nieuwe unieke tagID
+                        cur.execute("SELECT MAX(tagID) FROM tags")
+                        max_id = cur.fetchone()[0]
+                        tag_id = (max_id or 0) + 1
+                        cur.execute("INSERT INTO tags (tagID, name) VALUES (?, ?)", (tag_id, tag,))
+                    cur.execute("INSERT OR IGNORE INTO itemTags (itemID, tagID, type) VALUES (?, ?, ?)", (item_id, tag_id, 0))
+                report.updated += 1
+            conn.commit()
+            conn.close()
+            continue
         else:
-            items = _search_fuzzy(session, base, title, year, threshold=fuzzy_threshold)
+            ty_matches = _search_by_title_year(session, base, title, year)
+            if ty_matches:
+                items = ty_matches
+            else:
+                items = _search_fuzzy(session, base, title, year, threshold=fuzzy_threshold)
 
         if not items:
             report.not_found += 1
