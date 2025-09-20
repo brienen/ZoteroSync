@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import pytest
 
-from espace.zotsync.to_asreview import make_asreview_csv
+from espace.zotsync.zot_export import make_asreview_csv
 
 @pytest.mark.parametrize("filename", ["sample_zotero.csv", "real_zotero.csv"])
 def test_make_asreview_csv(tmp_path: Path, filename):

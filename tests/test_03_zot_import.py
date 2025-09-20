@@ -1,4 +1,4 @@
-"""Tests for from_asreview.apply_asreview_decisions.
+"""Tests for zot_import.apply_asreview_decisions.
 
 We mock Zotero HTTP calls to avoid network access.
 """
@@ -12,7 +12,7 @@ import json
 import pandas as pd
 import pytest
 
-from espace.zotsync.from_asreview import apply_asreview_decisions
+from espace.zotsync.zot_import import apply_asreview_decisions
 
 
 class _FakeResponse:
@@ -27,7 +27,7 @@ class _FakeResponse:
 
 
 class _FakeSession:
-    """Very small stub for requests.Session used by from_asreview."""
+    """Very small stub for requests.Session used by zot_import."""
 
     def __init__(self, items_index: Dict[str, Dict[str, Any]]):
         # items_index maps query key -> list of items
@@ -40,6 +40,8 @@ class _FakeSession:
             q = (params or {}).get("q", "")
             # Return list for the query if present, else empty
             data = self.items_index.get(q, [])
+            if not data:
+                data = self.items_index.get(q.lower(), [])
             return _FakeResponse(200, data)
         # Children not used here
         return _FakeResponse(404, text="not found")
@@ -59,33 +61,33 @@ def fake_env(monkeypatch):
     """Monkeypatch the Zotero session factory to our fake, and provide a tiny index.
 
     We create two items, both matched by title(+year):
-      - "Has DOI" (2020)
-      - "No DOI Title" (2021)
+      - "has doi" (2020)
+      - "no doi title" (2021)
     """
     # Two fake Zotero items
     item_by_title_has_doi = {
         "key": "ABCD1",
         "version": 10,
-        "data": {"title": "Has DOI", "date": "2020" , "tags": []},
+        "data": {"title": "has doi", "date": "2020" , "tags": []},
     }
     item_by_title = {
         "key": "WXYZ2",
         "version": 3,
-        "data": {"title": "No DOI Title", "date": "2021" , "tags": []},
+        "data": {"title": "no doi title", "date": "2021" , "tags": []},
     }
 
     # Index responses for GET /items?q=...
     items_index = {
         # exact title lookups used by titleCreatorYear stage
-        "Has DOI": [item_by_title_has_doi],
-        "No DOI Title": [item_by_title],
+        "has doi": [item_by_title_has_doi],
+        "no doi title": [item_by_title],
         # fuzzy stage also queries with q=title; we reuse same entry
     }
 
     fake = _FakeSession(items_index)
 
     # Patch the session creator inside the module under test
-    import espace.zotsync.from_asreview as m
+    import espace.zotsync.zot_import as m
 
     monkeypatch.setattr(m, "_zotero_session", lambda api_key: fake)
     # Provide library base builder untouched; apply_asreview_decisions uses it to compose URLs only
@@ -98,8 +100,8 @@ def asr_csv_tmp(tmp_path: Path) -> Path:
     """Create a minimal review export CSV for tests."""
     df = pd.DataFrame(
         [
-            {"title": "Has DOI", "year": "2020", "asreview_label": 1, "asreview_time": "2025-09-07T10:00:00Z", "asreview_note": "looks relevant"},
-            {"title": "No DOI Title", "year": "2021", "asreview_label": 0, "asreview_time": "2025-09-07T10:05:00Z", "asreview_note": "out of scope"},
+            {"title": "has doi", "year": "2020", "asreview_label": 1, "asreview_time": "2025-09-07T10:00:00Z", "asreview_note": "looks relevant"},
+            {"title": "no doi title", "year": "2021", "asreview_label": 0, "asreview_time": "2025-09-07T10:05:00Z", "asreview_note": "out of scope"},
         ]
     )
     p = tmp_path / "asr.csv"
@@ -107,12 +109,12 @@ def asr_csv_tmp(tmp_path: Path) -> Path:
     return p
 
 
-def test_from_asreview_dry_run(fake_env: _FakeSession, asr_csv_tmp: Path):
+def test_zot_import_dry_run(fake_env: _FakeSession, asr_csv_tmp: Path):
     res = apply_asreview_decisions(
         asr_csv=asr_csv_tmp,
         api_key="dummy",
-        library_id="123",
-        library_type="users",
+        library_id="6143565",
+        library_type="groups",
         dry_run=True,
     )
     # Both rows should be counted as updated in dry-run, no API writes
@@ -122,13 +124,14 @@ def test_from_asreview_dry_run(fake_env: _FakeSession, asr_csv_tmp: Path):
     assert fake_env.put_calls == []
 
 
-def test_from_asreview_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Path):
+def test_zot_import_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Path):
     res = apply_asreview_decisions(
         asr_csv=asr_csv_tmp,
         api_key="dummy",
-        library_id="123",
-        library_type="users",
+        library_id="6143565",
+        library_type="groups",
         dry_run=False,
+        db_path=None
     )
 
     # One PUT per matched item (we have 2 rows)
@@ -157,7 +160,7 @@ def test_from_asreview_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Pat
 
 
 # Test: dry-run with a sqlite db
-def test_from_asreview_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
+def test_zot_import_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
     # Setup: kopieer een minimale Zotero sqlite database naar tmp_path
     db_path = tmp_path / "zotero.sqlite"
     conn = sqlite3.connect(db_path)
@@ -165,25 +168,42 @@ def test_from_asreview_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
     cur.executescript("""
         CREATE TABLE libraries (libraryID INTEGER);
         INSERT INTO libraries (libraryID) VALUES (1);
+
+        CREATE TABLE groups (groupID INTEGER, libraryID INTEGER, name TEXT);
+        INSERT INTO groups (groupID, libraryID, name) VALUES (123, 1, 'Group 1');
+
         CREATE TABLE items (itemID INTEGER PRIMARY KEY, libraryID INTEGER, key TEXT);
-        INSERT INTO items (itemID, libraryID, key) VALUES (100, 1, 'ABCD1'), (101, 1, 'WXYZ2');
+        INSERT INTO items (itemID, libraryID, key)
+            VALUES (100, 1, 'ABCD1'),
+                (101, 1, 'WXYZ2');
+
         CREATE TABLE fields (fieldID INTEGER PRIMARY KEY, fieldName TEXT);
         INSERT INTO fields (fieldID, fieldName) VALUES (1, 'title');
+
         CREATE TABLE itemDataValues (valueID INTEGER PRIMARY KEY, value TEXT);
-        INSERT INTO itemDataValues (valueID, value) VALUES (1, 'Has DOI'), (2, 'No DOI Title');
+        INSERT INTO itemDataValues (valueID, value)
+            VALUES (1, 'has doi'),
+                (2, 'no doi title');
+
         CREATE TABLE itemData (itemID INTEGER, fieldID INTEGER, valueID INTEGER);
-        INSERT INTO itemData (itemID, fieldID, valueID) VALUES (100, 1, 1), (101, 1, 2);
-    """)
+        INSERT INTO itemData (itemID, fieldID, valueID)
+            VALUES (100, 1, 1),
+                (101, 1, 2);
+
+        -- Nieuwe tabellen voor review-tags
+        CREATE TABLE tags (tagID INTEGER PRIMARY KEY, name TEXT);
+        CREATE TABLE itemTags (itemID INTEGER, tagID INTEGER, type INTEGER);
+    """)    
     conn.commit()
     conn.close()
 
-    from espace.zotsync.from_asreview import apply_asreview_decisions
+    from espace.zotsync.zot_import import apply_asreview_decisions
 
     res = apply_asreview_decisions(
         asr_csv=asr_csv_tmp,
         api_key="unused",
         library_id="123",
-        library_type="users",
+        library_type="groups",
         dry_run=True,
         db_path=db_path,
     )

@@ -3,9 +3,10 @@
 from pathlib import Path
 
 # Zotero tag-prefixes used in ASReview integration
-REVIEW_DECISION_PREFIX = "review:Decision="
-REVIEW_TIME_PREFIX = "review:Time="
-REVIEW_REASON_PREFIX = "review:Reason="
+REVIEW_PREFIX = "review"
+REVIEW_DECISION_PREFIX = f"{REVIEW_PREFIX}:Decision="
+REVIEW_TIME_PREFIX = f"{REVIEW_PREFIX}:Time="
+REVIEW_REASON_PREFIX = f"{REVIEW_PREFIX}:Reason="
 
 # Zotero tag value options
 DECISION_INCLUDED = "included"

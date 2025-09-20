@@ -14,6 +14,17 @@
             "args": "${command:pickArgs}"
         },
         {
+            "name": "Pytest: test_03_zot_import (integration)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/test_03_zot_import.py"
+            ],
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Pytest: test_04_to_zotero_test (integration)",
             "type": "debugpy",
             "request": "launch",

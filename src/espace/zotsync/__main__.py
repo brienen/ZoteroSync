@@ -1,8 +1,9 @@
 """Command-line interface."""
 import typer
 
-from .to_asreview import make_asreview_csv
-from .from_asreview import apply_asreview_decisions
+from .zot_export import make_asreview_csv
+from .zot_import import apply_asreview_decisions
+from .zot_import import remove_review_tags
 
 app = typer.Typer(help="Zotero ↔ ASReview CLI")
 
@@ -17,7 +18,7 @@ def main(version: bool = typer.Option(
 )):
     pass
 
-def _cmd_to_asreview(
+def _cmd_zot_export(
     zotero_csv: str,
     out: str,
     api_key: str = typer.Option(..., help="Zotero API key"),
@@ -28,7 +29,7 @@ def _cmd_to_asreview(
     include_review_tags: bool = True,
     zotero_host: str = "http://localhost:23119"
 ):
-    """Shared implementation for to_asreview commands."""
+    """Shared implementation for zot_export commands."""
     make_asreview_csv(
         zotero_csv=zotero_csv,
         out_csv=out,
@@ -42,10 +43,10 @@ def _cmd_to_asreview(
     )
     typer.echo(f"ASReview CSV written to: {out}")
 
-@app.command(name="to-asreview")
-def to_asreview_hyphen(
+@app.command(name="zot-export")
+def zot_export_hyphen(
     zotero_csv: str = typer.Argument(..., help="Input Zotero CSV file"),
-    out: str = typer.Argument(..., help="Output ASReview CSV file"),
+    out: str = typer.Argument(..., help="Output CSV file"),
     api_key: str = typer.Option(..., help="Zotero API key"),
     library_id: str = typer.Option(..., help="Zotero library ID"),
     library_type: str = typer.Option("users", help="Zotero library type (users or groups)"),
@@ -54,7 +55,7 @@ def to_asreview_hyphen(
     include_review_tags: bool = typer.Option(False, "--include-review-tags/--no-include-review-tags", help="Lees bestaande review:* tags uit Zotero en voeg kolommen toe"),
     zotero_host: str = typer.Option("http://localhost:23119", help="Base URL van de Zotero instantie (default: http://localhost:23119)"),
 ):
-    _cmd_to_asreview(
+    _cmd_zot_export(
         zotero_csv=zotero_csv,
         out=out,
         api_key=api_key,
@@ -66,10 +67,10 @@ def to_asreview_hyphen(
         zotero_host=zotero_host
     )
 
-@app.command(name="to_asreview")
-def to_asreview_underscore(
+@app.command(name="zot_export")
+def zot_export_underscore(
     zotero_csv: str = typer.Argument(..., help="Input Zotero CSV file"),
-    out: str = typer.Argument(..., help="Output ASReview CSV file"),
+    out: str = typer.Argument(..., help="Output CSV file"),
     api_key: str = typer.Option(..., help="Zotero API key"),
     library_id: str = typer.Option(..., help="Zotero library ID"),
     library_type: str = typer.Option("users", help="Zotero library type (users or groups)"),
@@ -78,7 +79,7 @@ def to_asreview_underscore(
     include_review_tags: bool = typer.Option(False, "--include-review-tags/--no-include-review-tags", help="Lees bestaande review:* tags uit Zotero en voeg kolommen toe"),
     zotero_host: str = typer.Option("http://localhost:23119", help="Base URL van de Zotero instantie (default: http://localhost:23119)"),
 ):
-    _cmd_to_asreview(
+    _cmd_zot_export(
         zotero_csv=zotero_csv,
         out=out,
         api_key=api_key,
@@ -90,7 +91,7 @@ def to_asreview_underscore(
         zotero_host=zotero_host
     )
 
-def _cmd_from_asreview(
+def _cmd_zot_import(
     asr_csv: str,
     api_key: str,
     library_id: str,
@@ -121,8 +122,8 @@ def _cmd_from_asreview(
         fg=typer.colors.GREEN,
     )
 
-@app.command(name="from-asreview")
-def from_asreview_hyphen(
+@app.command(name="zot-import")
+def zot_import_hyphen(
     asr_csv: str = typer.Argument(..., help="ASReview CSV met 'included' kolom"),
     api_key: str = typer.Option(..., help="Zotero API key"),
     library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
@@ -135,7 +136,7 @@ def from_asreview_hyphen(
     review_date: str = typer.Option(None, help="Datum (YYYY-MM-DD) of vrije tekst (tag: review:Date=…)"),
     dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
 ):
-    _cmd_from_asreview(
+    _cmd_zot_import(
         asr_csv,
         api_key,
         library_id,
@@ -149,8 +150,8 @@ def from_asreview_hyphen(
         dry_run,
     )
 
-@app.command(name="from_asreview")
-def from_asreview_underscore(
+@app.command(name="zot_import")
+def zot_import_underscore(
     asr_csv: str = typer.Argument(..., help="ASReview CSV met 'included' kolom"),
     api_key: str = typer.Option(..., help="Zotero API key"),
     library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
@@ -163,8 +164,89 @@ def from_asreview_underscore(
     review_date: str = typer.Option(None, help="Datum (YYYY-MM-DD) of vrije tekst (tag: review:Date=…)"),
     dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
 ):
-    _cmd_from_asreview(
+    _cmd_zot_import(
         asr_csv,
+        api_key,
+        library_id,
+        library_type,
+        tag_prefix,
+        fuzzy_threshold,
+        review_name,
+        review_round,
+        reviewer,
+        review_date,
+        dry_run,
+    )
+
+def _cmd_zot_clean(
+    api_key: str,
+    library_id: str,
+    library_type: str,
+    tag_prefix: str,
+    fuzzy_threshold: float,
+    review_name: str | None,
+    review_round: str | None,
+    reviewer: str | None,
+    review_date: str | None,
+    dry_run: bool,
+):
+    res = remove_review_tags(
+        api_key=api_key,
+        library_id=library_id,
+        library_type=library_type,
+        tag_prefix=tag_prefix,
+        fuzzy_threshold=fuzzy_threshold,
+        review_name=review_name,
+        review_round=review_round,
+        reviewer=reviewer,
+        review_date=review_date,
+        dry_run=dry_run,
+    )
+    typer.secho(
+        f"[CLEANED] removed={res['removed']} errors={res['errors']}",
+        fg=typer.colors.GREEN,
+    )
+
+@app.command(name="zot-clean")
+def zot_clean_hyphen(
+    api_key: str = typer.Option(..., help="Zotero API key"),
+    library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
+    library_type: str = typer.Option("users", help="Zotero library type (users or groups)"),
+    tag_prefix: str = typer.Option("ASReview", help="Prefix voor beslissings-tags"),
+    fuzzy_threshold: float = typer.Option(0.90, help="Drempel voor fuzzy titelmatch (0-1)"),
+    review_name: str = typer.Option(None, help="Naam van de review (tag: review:Name=…)"),
+    review_round: str = typer.Option(None, help="Review-ronde / wave (tag: review:Round=…)"),
+    reviewer: str = typer.Option(None, help="Naam/ID reviewer (tag: review:Reviewer=…)"),
+    review_date: str = typer.Option(None, help="Datum (YYYY-MM-DD) of vrije tekst (tag: review:Date=…)"),
+    dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
+):
+    _cmd_zot_clean(
+        api_key,
+        library_id,
+        library_type,
+        tag_prefix,
+        fuzzy_threshold,
+        review_name,
+        review_round,
+        reviewer,
+        review_date,
+        dry_run,
+    )
+
+@app.command(name="zot_clean")
+def zot_clean_underscore(
+    api_key: str = typer.Option(..., help="Zotero API key"),
+    library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
+    library_type: str = typer.Option("users", help="Zotero library type (users or groups)"),
+    tag_prefix: str = typer.Option("ASReview", help="Prefix voor beslissings-tags"),
+    fuzzy_threshold: float = typer.Option(0.90, help="Drempel voor fuzzy titelmatch (0-1)"),
+    review_name: str = typer.Option(None, help="Naam van de review (tag: review:Name=…)"),
+    review_round: str = typer.Option(None, help="Review-ronde / wave (tag: review:Round=…)"),
+    reviewer: str = typer.Option(None, help="Naam/ID reviewer (tag: review:Reviewer=…)"),
+    review_date: str = typer.Option(None, help="Datum (YYYY-MM-DD) of vrije tekst (tag: review:Date=…)"),
+    dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
+):
+    _cmd_zot_clean(
         api_key,
         library_id,
         library_type,

@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 import requests
 
-from espace.zotsync.from_asreview import apply_asreview_decisions
+from espace.zotsync.zot_import import apply_asreview_decisions
 
 ZOTERO_HOST = "https://api.zotero.org"
 
@@ -169,7 +169,7 @@ def test_write_to_real_zotero(tmp_path: Path):
 
 @pytest.mark.integration
 @pytest.mark.skipif(True, reason="Only for manual testing")
-def test_from_asreview_csv_counts():
+def test_zot_import_csv_counts():
     """Read test data from from_asreview.csv and verify label counts.
 
     Expectations:
@@ -248,7 +248,7 @@ def test_lookup_test_library_in_real_zotero_db():
 @pytest.mark.integration
 def test_write_to_sqlite_test_library(tmp_path: Path):
     import sqlite3
-    from espace.zotsync.from_asreview import apply_asreview_decisions
+    from espace.zotsync.zot_import import apply_asreview_decisions
 
     # Zoek Test library in de lokale database
     db_path = os.path.expanduser("~/Zotero/zotero.sqlite")
@@ -307,7 +307,7 @@ def test_write_to_sqlite_test_library(tmp_path: Path):
     assert res["errors"] == 0
 
 @pytest.mark.integration
-def test_from_asreview_csv_counts_sqlite():
+def test_zot_import_csv_counts_sqlite():
     """Read test data from from_asreview.csv and verify label counts and apply to local Zotero sqlite database."""
     import sqlite3
     db_path = os.path.expanduser("~/Zotero/zotero.sqlite")

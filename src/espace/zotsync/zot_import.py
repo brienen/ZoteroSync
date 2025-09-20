@@ -390,4 +390,105 @@ def apply_asreview_decisions(
     return report.to_dict()
 
 
-__all__ = ["apply_asreview_decisions"]
+__all__ = ["apply_asreview_decisions", "remove_review_tags"]
+
+
+# -------------------------- remove_review_tags API --------------------------
+
+def remove_review_tags(
+    api_key,
+    library_id,
+    library_type="groups",
+    tag_prefix="review:",
+    fuzzy_threshold=0.90,
+    review_name=None,
+    review_round=None,
+    reviewer=None,
+    review_date=None,
+    dry_run=False,
+    zotero_host="http://localhost:23119",
+    db_path: Path | None = const.DEFAULT_SQLITE_PATH,
+) -> dict:
+    """
+    Verwijder alle tags met prefix `review:` uit Zotero-items.
+
+    Als db_path bestaat, gebruik SQLite om alle review:* tags te verwijderen.
+    Anders, gebruik de Zotero API om tags met prefix review: te verwijderen.
+    Retourneert dict met {removed, errors}.
+    """
+    removed = 0
+    errors = 0
+    # 1. SQLite pad
+    if db_path and Path(db_path).exists():
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        try:
+            # Zoek alle tagIDs met name LIKE 'review:%'
+            cur.execute("SELECT tagID FROM tags WHERE name LIKE ?", (f"{tag_prefix}%",))
+            tag_ids = [row[0] for row in cur.fetchall()]
+            if not tag_ids:
+                conn.close()
+                return {"removed": 0, "errors": 0}
+            # Zoek alle itemTags met deze tagIDs
+            cur.execute(
+                f"SELECT itemID, tagID FROM itemTags WHERE tagID IN ({','.join(['?']*len(tag_ids))})",
+                tag_ids
+            )
+            rows = cur.fetchall()
+            if dry_run:
+                conn.close()
+                return {"removed": len(rows), "errors": 0}
+            # Verwijder deze itemTags
+            for item_id, tag_id in rows:
+                try:
+                    cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
+                    removed += 1
+                except Exception:
+                    errors += 1
+            conn.commit()
+        finally:
+            conn.close()
+        return {"removed": removed, "errors": errors}
+    # 2. Zotero API pad
+    session = _zotero_session(api_key)
+    base = _zotero_base(library_type, library_id, host=zotero_host)
+    try:
+        # Haal alle items op, paginering indien nodig (max 100 per keer)
+        start = 0
+        per_page = 100
+        while True:
+            r = session.get(f"{base}/items", params={"format": "json", "limit": per_page, "start": start})
+            if r.status_code != 200:
+                errors += 1
+                break
+            items = r.json()
+            if not items:
+                break
+            for item in items:
+                key = item.get("key")
+                ver = item.get("version")
+                data = item.get("data", {})
+                tags = data.get("tags", []) or []
+                orig_len = len(tags)
+                # Verwijder alle tags met prefix tag_prefix
+                tags_new = [t for t in tags if not t.get("tag", "").startswith(tag_prefix)]
+                if len(tags_new) < orig_len:
+                    if dry_run:
+                        removed += orig_len - len(tags_new)
+                        continue
+                    data["tags"] = tags_new
+                    resp = session.put(
+                        f"{base}/items/{key}",
+                        data=json.dumps({"key": key, "version": ver, "data": data}),
+                    )
+                    if resp.status_code in (200, 204):
+                        removed += orig_len - len(tags_new)
+                    else:
+                        errors += 1
+            if len(items) < per_page:
+                break
+            start += per_page
+    except Exception:
+        errors += 1
+    return {"removed": removed, "errors": errors}
