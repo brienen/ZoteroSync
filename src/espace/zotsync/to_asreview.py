@@ -13,6 +13,8 @@ Public API:
 """
 from __future__ import annotations
 
+from . import const
+
 import hashlib
 import re
 from pathlib import Path
@@ -167,10 +169,22 @@ def make_asreview_csv(
   out["url"] = ndf["url"].map(_norm)
   out["year"] = ndf.apply(lambda r: _first_nonempty(_norm(r.get("year", "")), _guess_year(r.get("date", ""))), axis=1)
 
+  # Voeg optionele ASReview kolommen toe indien beschikbaar
+  for col in [const.ASR_LABEL_COL, const.ASR_TIME_COL, const.ASR_NOTE_COL]:
+      if col in df.columns:
+          out[col] = df[col]
+      else:
+          out[col] = ""
+
   # Ensure required columns exist
   for c in REQUIRED_ASR_COLS:
     if c not in out.columns:
       out[c] = ""
+
+  # Zorg dat ook de optionele reviewvelden aanwezig zijn
+  for c in [const.ASR_LABEL_COL, const.ASR_TIME_COL, const.ASR_NOTE_COL]:
+      if c not in out.columns:
+          out[c] = ""
 
   # Deduplicate (DOI first, else title+year fingerprint)
   if deduplicate:

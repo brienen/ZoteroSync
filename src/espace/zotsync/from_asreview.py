@@ -37,6 +37,8 @@ import sqlite3
 import pandas as pd
 import requests
 
+import espace.zotsync.const as const
+
 # -------------------------- helpers --------------------------
 
 def _norm(s: object) -> str:
@@ -217,7 +219,7 @@ def apply_asreview_decisions(
     fuzzy_threshold: float = 0.90,
     dry_run: bool = False,
     zotero_host: str = "http://localhost:23119",
-    db_path: Path | None = None,
+    db_path: Path | None = const.DEFAULT_SQLITE_PATH,
 ) -> dict:
     """
     Schrijf ASReview-beslissingen terug naar Zotero als tags.
@@ -236,6 +238,9 @@ def apply_asreview_decisions(
 
     Returns: dict met aantallen {updated, not_found, errors}.
     """
+    if db_path and not db_path.exists():
+        raise FileNotFoundError(f"SQLite database not found at: {db_path}")
+
     df = pd.read_csv(asr_csv)
 
     df["asreview_label"] = df.get("asreview_label", "")
@@ -262,10 +267,10 @@ def apply_asreview_decisions(
         if not s:
             return None
         # Common encodings: 1/0, included/excluded, relevant/irrelevant, yes/no, true/false
-        if s in {"1", "included", "relevant", "yes", "true", "y"}:
-            return "included"
-        if s in {"0", "-1", "excluded", "irrelevant", "no", "false", "n"}:
-            return "excluded"
+        if s in {"1", const.DECISION_INCLUDED, "relevant", "yes", "true", "y"}:
+            return const.DECISION_INCLUDED
+        if s in {"0", "-1", const.DECISION_EXCLUDED, "irrelevant", "no", "false", "n"}:
+            return const.DECISION_EXCLUDED
         return None
 
     session = _zotero_session(api_key)
@@ -291,13 +296,13 @@ def apply_asreview_decisions(
 
         tags_to_set = []
         if decision_value:
-            tags_to_set.append(f"review:Decision={decision_value}")
+            tags_to_set.append(f"{const.REVIEW_DECISION_PREFIX}{decision_value}")
             # Always include Time if available, regardless of decision
             if time_value:
-                tags_to_set.append(f"review:Time={time_value}")
+                tags_to_set.append(f"{const.REVIEW_TIME_PREFIX}{time_value}")
             # Use Reason= instead of ReasonDenied=, only if non-empty
             if reason_value:
-                tags_to_set.append(f"review:Reason={reason_value}")
+                tags_to_set.append(f"{const.REVIEW_REASON_PREFIX}{reason_value}")
 
         # Zoek items (alle matches)
         if use_sqlite:
@@ -317,9 +322,9 @@ def apply_asreview_decisions(
                 item_id = row[0]
                 # Verwijder bestaande review:* tags
                 cur.execute("""
-                    SELECT tagID FROM tags WHERE name LIKE 'review:%'
+                    SELECT tagID FROM tags WHERE name LIKE ? 
                     AND tagID IN (SELECT tagID FROM itemTags WHERE itemID = ?)
-                """, (item_id,))
+                """, (f"{const.TAG_PREFIX_REVIEW}%", item_id))
                 tag_ids = [row[0] for row in cur.fetchall()]
                 for tag_id in tag_ids:
                     cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
