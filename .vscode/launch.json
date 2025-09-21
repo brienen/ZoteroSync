@@ -37,6 +37,17 @@
             ],
             "envFile": "${workspaceFolder}/.env",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Pytest: test_05_zot_clean (integration)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/test_05_zot_clean.py"
+            ],
+            "envFile": "${workspaceFolder}/.env",
+            "console": "integratedTerminal"
         }
     ]
 }

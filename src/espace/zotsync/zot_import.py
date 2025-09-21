@@ -399,7 +399,7 @@ def remove_review_tags(
     api_key,
     library_id,
     library_type="groups",
-    tag_prefix="review:",
+    tag_prefix=const.REVIEW_PREFIX,
     fuzzy_threshold=0.90,
     review_name=None,
     review_round=None,
@@ -424,25 +424,53 @@ def remove_review_tags(
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         try:
-            # Zoek alle tagIDs met name LIKE 'review:%'
-            cur.execute("SELECT tagID FROM tags WHERE name LIKE ?", (f"{tag_prefix}%",))
+            cur.execute("SELECT libraryID FROM groups WHERE groupID = ?", (library_id,))
+            group = cur.fetchone()
+            if not group:
+                return []
+
+            cur.execute("SELECT itemID, key FROM items WHERE libraryID = ?", (group[0],))
+            items = cur.fetchall()
+            if not items:
+                return {"removed": 0, "errors": 0}
+
+            # Zoek alle tagIDs met name LIKE 'review:%' EN alleen gekoppeld aan items van deze library
+            cur.execute(
+                """
+                SELECT DISTINCT t.tagID
+                FROM tags t
+                JOIN itemTags it ON t.tagID = it.tagID
+                JOIN items i ON it.itemID = i.itemID
+                WHERE t.name LIKE ? AND i.libraryID = ?
+                """,
+                (f"{tag_prefix}%", group[0]),
+            )
             tag_ids = [row[0] for row in cur.fetchall()]
             if not tag_ids:
                 conn.close()
                 return {"removed": 0, "errors": 0}
-            # Zoek alle itemTags met deze tagIDs
+            # Zoek alle itemTags met deze tagIDs en JOIN met items
             cur.execute(
-                f"SELECT itemID, tagID FROM itemTags WHERE tagID IN ({','.join(['?']*len(tag_ids))})",
-                tag_ids
+                f"""
+                SELECT it.itemID, it.tagID
+                FROM itemTags it
+                JOIN items i ON it.itemID = i.itemID
+                WHERE it.tagID IN ({','.join(['?']*len(tag_ids))}) AND i.libraryID = ?
+                """,
+                (tag_ids + [group[0]]),
             )
             rows = cur.fetchall()
             if dry_run:
                 conn.close()
                 return {"removed": len(rows), "errors": 0}
-            # Verwijder deze itemTags
+            # Verwijder deze itemTags en verwijder de tag uit tags als hij nergens meer wordt gebruikt
             for item_id, tag_id in rows:
                 try:
                     cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
+                    cur.execute(
+                        "DELETE FROM tags WHERE tagID = ? AND NOT EXISTS (SELECT 1 FROM itemTags WHERE tagID = ?)",
+                        (tag_id, tag_id)
+                    )
                     removed += 1
                 except Exception:
                     errors += 1
