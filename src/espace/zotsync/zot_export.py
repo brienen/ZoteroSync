@@ -17,10 +17,12 @@ from . import const
 
 import hashlib
 import re
+import sqlite3
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 import requests
 from dateutil import parser as dtp
 
@@ -150,7 +152,7 @@ def make_asreview_csv(
 
   def _norm_authors(s: str) -> str:
     s = _norm(s)
-    if not s:
+    if not s or s.lower() == "nan":
       return ""
     parts = [a.strip() for a in s.split(";") if a.strip()]
     return "; ".join(parts)
@@ -208,4 +210,177 @@ def make_asreview_csv(
   out.to_csv(out_csv, index=False)
 
 
-__all__ = ["make_asreview_csv"]
+def make_asreview_csv_from_db(
+    db_path: Path,
+    out_csv: Path,
+    library_id: str,
+    deduplicate: bool = True,
+    library_type: str = "groups",
+) -> None:
+  """
+  Build an ASReview-ready CSV from a Zotero SQLite database.
+  
+  Args:
+    db_path: Path to Zotero SQLite database file.
+    out_csv: Output CSV path for ASReview.
+    deduplicate: If True, remove duplicates (by DOI, else title+year fingerprint). If False, keep all rows.
+  """
+  conn = sqlite3.connect(db_path)
+  cur = conn.cursor()
+  cur.execute("SELECT libraryID FROM groups WHERE groupID = ?", (library_id,))
+  group = cur.fetchone()
+  if not group:
+      return
+  group_id = group[0]
+
+  query = f"""
+  SELECT
+  items.key as item_key,
+  titleValues.value as title,
+  abstractValues.value as abstract,
+  authors.value as authors,
+  yearValues.value as year,
+  doiValues.value as doi,
+  urlValues.value as url,
+  tags.value as keywords,
+  labelTags.label_value as asreview_label,
+  timeTags.time_value as asreview_time,
+  noteTags.note_value as asreview_note
+FROM items
+LEFT JOIN itemData AS titleData 
+  ON titleData.itemID = items.itemID 
+  AND titleData.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'title' LIMIT 1)
+LEFT JOIN itemDataValues AS titleValues 
+  ON titleValues.valueID = titleData.valueID
+
+LEFT JOIN itemData AS abstractData 
+  ON abstractData.itemID = items.itemID 
+  AND abstractData.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'abstractNote' LIMIT 1)
+LEFT JOIN itemDataValues AS abstractValues 
+  ON abstractValues.valueID = abstractData.valueID
+
+LEFT JOIN (
+  SELECT ic.itemID, GROUP_CONCAT(c.lastName || ' ' || c.firstName, '; ') AS value
+  FROM itemCreators ic
+  JOIN creators c ON c.creatorID = ic.creatorID
+  GROUP BY ic.itemID
+) AS authors ON authors.itemID = items.itemID
+
+LEFT JOIN itemData AS yearData 
+  ON yearData.itemID = items.itemID 
+  AND yearData.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'date' LIMIT 1)
+LEFT JOIN itemDataValues AS yearValues 
+  ON yearValues.valueID = yearData.valueID
+
+LEFT JOIN itemData AS doiData 
+  ON doiData.itemID = items.itemID 
+  AND doiData.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'DOI' LIMIT 1)
+LEFT JOIN itemDataValues AS doiValues 
+  ON doiValues.valueID = doiData.valueID
+
+LEFT JOIN itemData AS urlData 
+  ON urlData.itemID = items.itemID 
+  AND urlData.fieldID = (SELECT fieldID FROM fields WHERE fieldName = 'url' LIMIT 1)
+LEFT JOIN itemDataValues AS urlValues 
+  ON urlValues.valueID = urlData.valueID
+
+LEFT JOIN (
+  SELECT it.itemID, GROUP_CONCAT(t.name, '; ') AS value
+  FROM itemTags it
+  JOIN tags t ON t.tagID = it.tagID
+  GROUP BY it.itemID
+) AS tags ON tags.itemID = items.itemID
+
+LEFT JOIN (
+  SELECT it.itemID,
+         GROUP_CONCAT(SUBSTR(t.name, LENGTH('review:Label=') + 1), '; ') AS label_value
+  FROM itemTags it
+  JOIN tags t ON t.tagID = it.tagID
+  WHERE t.name LIKE 'review:Label=%'
+  GROUP BY it.itemID
+) AS labelTags ON labelTags.itemID = items.itemID
+
+LEFT JOIN (
+  SELECT it.itemID,
+         GROUP_CONCAT(SUBSTR(t.name, LENGTH('review:Time=') + 1), '; ') AS time_value
+  FROM itemTags it
+  JOIN tags t ON t.tagID = it.tagID
+  WHERE t.name LIKE 'review:Time=%'
+  GROUP BY it.itemID
+) AS timeTags ON timeTags.itemID = items.itemID
+
+LEFT JOIN (
+  SELECT it.itemID,
+         GROUP_CONCAT(SUBSTR(t.name, LENGTH('review:Note=') + 1), '; ') AS note_value
+  FROM itemTags it
+  JOIN tags t ON t.tagID = it.tagID
+  WHERE t.name LIKE 'review:Note=%'
+  GROUP BY it.itemID
+) AS noteTags ON noteTags.itemID = items.itemID
+
+WHERE items.itemTypeID IN (
+  SELECT itemTypeID FROM itemTypes 
+  WHERE typeName IN ('journalArticle', 'book', 'conferencePaper', 'report', 'thesis', 'webpage')
+) AND items.libraryID = {group_id}
+"""
+  df = pd.read_sql_query(query, conn)
+  conn.close()
+
+  out = pd.DataFrame()
+  out["title"] = df["title"].fillna("").map(_norm)
+  out["abstract"] = df["abstract"].fillna("").map(_norm)
+
+  def _norm_authors(s: str) -> str:
+    s = _norm(s)
+    if not s or s.lower() == "nan":
+      return ""
+    parts = [a.strip() for a in s.split(";") if a.strip()]
+    return "; ".join(parts)
+
+  out["authors"] = df["authors"].fillna("").map(_norm_authors)
+
+  def _norm_keywords(s: str) -> str:
+    s = _norm(s)
+    if not s or s.strip().lower() in ("nan", ""):
+      return ""
+    parts = [p.strip() for p in s.split(";") if p.strip() and p.strip().lower() != "nan"]
+    return "; ".join(parts)
+
+  out["keywords"] = df["keywords"].fillna("").map(_norm_keywords)
+
+  def _norm_doi(s: str) -> str:
+    s = _norm(s)
+    if not s or s.strip().lower() in ("nan", ""):
+      return ""
+    return s
+  out["doi"] = df["doi"].fillna("").map(_norm_doi)
+  out["url"] = df["url"].fillna("").map(_norm)
+  out["year"] = df["year"].fillna("").map(lambda s: _guess_year(s))
+
+  out[const.ASR_LABEL_COL] = df["asreview_label"].fillna("").map(_norm)
+  out[const.ASR_TIME_COL] = df["asreview_time"].fillna("").map(_norm)
+  out[const.ASR_NOTE_COL] = df["asreview_note"].fillna("").map(_norm)
+
+  # Ensure required columns exist
+  for c in REQUIRED_ASR_COLS:
+    if c not in out.columns:
+      out[c] = ""
+
+  # Ensure optional ASReview review columns exist
+  for c in [const.ASR_LABEL_COL, const.ASR_TIME_COL, const.ASR_NOTE_COL]:
+    if c not in out.columns:
+      out[c] = ""
+
+  out = out.replace("nan", "", regex=False)
+
+  # Deduplicate (DOI first, else title+year fingerprint)
+  if deduplicate:
+    fps = out.apply(lambda r: _build_fingerprint(r["title"], r["year"], r["doi"]), axis=1)
+    out = out.loc[~fps.duplicated()].copy()
+
+  out_csv.parent.mkdir(parents=True, exist_ok=True)
+  out = out.replace({np.nan: ""}, regex=False)
+  out.to_csv(out_csv, index=False, na_rep="")
+
+
+__all__ = ["make_asreview_csv", "make_asreview_csv_from_db"]
