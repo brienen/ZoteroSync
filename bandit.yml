@@ -1,2 +1,8 @@
-assert_used:
-  skips: ["*/test_*.py"]
+# bandit.yaml
+exclude_dirs:
+  - tests
+  - .venv
+skips:
+  - B324 # negeert SHA1 waarschuwingen
+  - B101 # voorbeeld: assertions in tests
+  # - B110       # voorbeeld: try/except/pass

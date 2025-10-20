@@ -16,6 +16,8 @@ repos:
       - id: bandit
         pass_filenames: false
         args:
+          - -c
+          - bandit.yml # <-- gebruik deze config
           - -r
           - src # scan alleen app-code
           - -x
