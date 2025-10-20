@@ -1,4 +1,5 @@
 """Sphinx configuration."""
+
 project = "Zoterosync"
 author = "Arjen Brienen"
 copyright = "2025, Arjen Brienen"

@@ -24,13 +24,13 @@ Werking:
 - Retourneert een klein rapport met aantal geüpdatete, gemiste en fouten.
 - Als meerdere Zotero-items matchen, worden **alle** matches bijgewerkt.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
 import re
 from pathlib import Path
-from typing import Optional, Tuple
 import difflib
 import sqlite3
 
@@ -41,10 +41,12 @@ import espace.zotsync.const as const
 
 # -------------------------- helpers --------------------------
 
+
 def _norm(s: object) -> str:
     if s is None:
         return ""
     return re.sub(r"\s+", " ", str(s)).strip()
+
 
 def _normalize_doi(s: object) -> str:
     """Normalize DOI for robust matching: lowercased, strip URL prefixes."""
@@ -54,7 +56,7 @@ def _normalize_doi(s: object) -> str:
     # strip common URL prefixes
     for prefix in ("https://doi.org/", "http://doi.org/", "doi:", "doi.org/"):
         if raw.startswith(prefix):
-            raw = raw[len(prefix):]
+            raw = raw[len(prefix) :]
     # strip leading/trailing spaces again (in case)
     return raw.strip()
 
@@ -67,7 +69,9 @@ def _guess_year(s: str) -> str:
     return m.group(0) if m else ""
 
 
-def _zotero_base(lib_type: str, lib_id: str, host: str = "http://localhost:23119") -> str:
+def _zotero_base(
+    lib_type: str, lib_id: str, host: str = "http://localhost:23119"
+) -> str:
     return f"{host}/{lib_type}/{lib_id}"
 
 
@@ -82,7 +86,10 @@ def _search_by_doi(session: requests.Session, base: str, doi: str):
     matches = []
     if not doi:
         return matches
-    r = session.get(f"{base}/items", params={"q": doi, "qmode": "everything", "format": "json", "limit": 100})
+    r = session.get(
+        f"{base}/items",
+        params={"q": doi, "qmode": "everything", "format": "json", "limit": 100},
+    )
     if r.status_code != 200:
         return matches
     for it in r.json():
@@ -98,7 +105,13 @@ def _search_by_title_year(session: requests.Session, base: str, title: str, year
     if not title:
         return results
     r = session.get(
-        f"{base}/items", params={"q": title, "qmode": "titleCreatorYear", "format": "json", "limit": 100}
+        f"{base}/items",
+        params={
+            "q": title,
+            "qmode": "titleCreatorYear",
+            "format": "json",
+            "limit": 100,
+        },
     )
     if r.status_code != 200:
         return results
@@ -107,17 +120,24 @@ def _search_by_title_year(session: requests.Session, base: str, title: str, year
         data = it.get("data", {})
         cand_title = _norm(data.get("title", "")).lower()
         if cand_title == tl:
-            zyear = _guess_year(_norm(data.get("date", "")) or _norm(data.get("publicationYear", "")))
+            zyear = _guess_year(
+                _norm(data.get("date", "")) or _norm(data.get("publicationYear", ""))
+            )
             if not year or not zyear or year.lower() == zyear.lower():
                 results.append(it)
     return results
 
 
-def _search_fuzzy(session: requests.Session, base: str, title: str, year: str, threshold: float = 0.9):
+def _search_fuzzy(
+    session: requests.Session, base: str, title: str, year: str, threshold: float = 0.9
+):
     title = _norm(title)
     if not title:
         return []
-    r = session.get(f"{base}/items", params={"q": title, "qmode": "everything", "format": "json", "limit": 200})
+    r = session.get(
+        f"{base}/items",
+        params={"q": title, "qmode": "everything", "format": "json", "limit": 200},
+    )
     if r.status_code != 200:
         return []
     tl = title.lower()
@@ -129,7 +149,9 @@ def _search_fuzzy(session: requests.Session, base: str, title: str, year: str, t
             continue
         score = difflib.SequenceMatcher(None, tl, cand_title).ratio()
         if year:
-            zyear = _guess_year(_norm(data.get("date", "")) or _norm(data.get("publicationYear", "")))
+            zyear = _guess_year(
+                _norm(data.get("date", "")) or _norm(data.get("publicationYear", ""))
+            )
             if zyear == year:
                 score += 0.02
         if score >= threshold:
@@ -162,15 +184,15 @@ class UpdateReport:
     errors: int = 0
 
     def to_dict(self):
-        return {"updated": self.updated, "not_found": self.not_found, "errors": self.errors}
+        return {
+            "updated": self.updated,
+            "not_found": self.not_found,
+            "errors": self.errors,
+        }
 
 
 def _find_items_by_title_year_sqlite(
-    db_path: Path,
-    title: str,
-    year: str,
-    library_id: int,
-    threshold: float = 0.9
+    db_path: Path, title: str, year: str, library_id: int, threshold: float = 0.9
 ) -> list[dict]:
     title = _norm(title).lower()
     if not title:
@@ -185,18 +207,23 @@ def _find_items_by_title_year_sqlite(
     if not group:
         return []
 
-    cur.execute("SELECT itemID, key FROM items WHERE libraryID = ?", (group["libraryID"],))
+    cur.execute(
+        "SELECT itemID, key FROM items WHERE libraryID = ?", (group["libraryID"],)
+    )
     items = cur.fetchall()
 
     results = []
     for item in items:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT value FROM itemDataValues WHERE valueID = (
                 SELECT valueID FROM itemData WHERE itemID = ? AND fieldID = (
                     SELECT fieldID FROM fields WHERE fieldName = 'title'
                 ) LIMIT 1
             )
-        """, (item["itemID"],))
+        """,
+            (item["itemID"],),
+        )
         row = cur.fetchone()
         if not row:
             continue
@@ -209,6 +236,7 @@ def _find_items_by_title_year_sqlite(
 
 
 # -------------------------- core API --------------------------
+
 
 def apply_asreview_decisions(
     asr_csv: Path,
@@ -283,7 +311,7 @@ def apply_asreview_decisions(
         title = _norm(r.get("title", ""))
         year = _norm(r.get("year", ""))
         # doi is not used for matching anymore per updated docstring, but keep it normalized anyway
-        doi = _norm(r.get("doi", "").lower())
+        # doi = _norm(r.get("doi", "").lower())
 
         time_value = _format_review_time(r.get("asreview_time", ""))
         raw_reason = r.get("asreview_note", "")
@@ -306,10 +334,13 @@ def apply_asreview_decisions(
 
         # Zoek items (alle matches)
         if use_sqlite:
-            items = _find_items_by_title_year_sqlite(db_path, title, year, library_id, threshold=fuzzy_threshold)
+            items = _find_items_by_title_year_sqlite(
+                db_path, title, year, library_id, threshold=fuzzy_threshold
+            )
             if not tags_to_set:
                 continue
             import sqlite3
+
             conn = sqlite3.connect(db_path)
             cur = conn.cursor()
             for match in items:
@@ -321,13 +352,19 @@ def apply_asreview_decisions(
                     continue
                 item_id = row[0]
                 # Verwijder bestaande review:* tags
-                cur.execute("""
-                    SELECT tagID FROM tags WHERE name LIKE ? 
+                cur.execute(
+                    """
+                    SELECT tagID FROM tags WHERE name LIKE ?
                     AND tagID IN (SELECT tagID FROM itemTags WHERE itemID = ?)
-                """, (f"{const.TAG_PREFIX_REVIEW}%", item_id))
+                """,
+                    (f"{const.TAG_PREFIX_REVIEW}%", item_id),
+                )
                 tag_ids = [row[0] for row in cur.fetchall()]
                 for tag_id in tag_ids:
-                    cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
+                    cur.execute(
+                        "DELETE FROM itemTags WHERE itemID = ? AND tagID = ?",
+                        (item_id, tag_id),
+                    )
                 for tag in tags_to_set:
                     # Check of tag al bestaat
                     cur.execute("SELECT tagID FROM tags WHERE name = ?", (tag,))
@@ -339,8 +376,17 @@ def apply_asreview_decisions(
                         cur.execute("SELECT MAX(tagID) FROM tags")
                         max_id = cur.fetchone()[0]
                         tag_id = (max_id or 0) + 1
-                        cur.execute("INSERT INTO tags (tagID, name) VALUES (?, ?)", (tag_id, tag,))
-                    cur.execute("INSERT OR IGNORE INTO itemTags (itemID, tagID, type) VALUES (?, ?, ?)", (item_id, tag_id, 0))
+                        cur.execute(
+                            "INSERT INTO tags (tagID, name) VALUES (?, ?)",
+                            (
+                                tag_id,
+                                tag,
+                            ),
+                        )
+                    cur.execute(
+                        "INSERT OR IGNORE INTO itemTags (itemID, tagID, type) VALUES (?, ?, ?)",
+                        (item_id, tag_id, 0),
+                    )
                 report.updated += 1
             conn.commit()
             conn.close()
@@ -350,7 +396,9 @@ def apply_asreview_decisions(
             if ty_matches:
                 items = ty_matches
             else:
-                items = _search_fuzzy(session, base, title, year, threshold=fuzzy_threshold)
+                items = _search_fuzzy(
+                    session, base, title, year, threshold=fuzzy_threshold
+                )
 
         if not items:
             report.not_found += 1
@@ -381,7 +429,10 @@ def apply_asreview_decisions(
                 ensure_tag(t)
 
             data["tags"] = tags
-            resp = session.put(f"{base}/items/{key}", data=json.dumps({"key": key, "version": ver, "data": data}))
+            resp = session.put(
+                f"{base}/items/{key}",
+                data=json.dumps({"key": key, "version": ver, "data": data}),
+            )
             if resp.status_code in (200, 204):
                 report.updated += 1
             else:
@@ -394,6 +445,7 @@ __all__ = ["apply_asreview_decisions", "remove_review_tags"]
 
 
 # -------------------------- remove_review_tags API --------------------------
+
 
 def remove_review_tags(
     api_key,
@@ -421,6 +473,7 @@ def remove_review_tags(
     # 1. SQLite pad
     if db_path and Path(db_path).exists():
         import sqlite3
+
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         try:
@@ -429,7 +482,9 @@ def remove_review_tags(
             if not group:
                 return []
 
-            cur.execute("SELECT itemID, key FROM items WHERE libraryID = ?", (group[0],))
+            cur.execute(
+                "SELECT itemID, key FROM items WHERE libraryID = ?", (group[0],)
+            )
             items = cur.fetchall()
             if not items:
                 return {"removed": 0, "errors": 0}
@@ -466,10 +521,13 @@ def remove_review_tags(
             # Verwijder deze itemTags en verwijder de tag uit tags als hij nergens meer wordt gebruikt
             for item_id, tag_id in rows:
                 try:
-                    cur.execute("DELETE FROM itemTags WHERE itemID = ? AND tagID = ?", (item_id, tag_id))
+                    cur.execute(
+                        "DELETE FROM itemTags WHERE itemID = ? AND tagID = ?",
+                        (item_id, tag_id),
+                    )
                     cur.execute(
                         "DELETE FROM tags WHERE tagID = ? AND NOT EXISTS (SELECT 1 FROM itemTags WHERE tagID = ?)",
-                        (tag_id, tag_id)
+                        (tag_id, tag_id),
                     )
                     removed += 1
                 except Exception:
@@ -486,7 +544,10 @@ def remove_review_tags(
         start = 0
         per_page = 100
         while True:
-            r = session.get(f"{base}/items", params={"format": "json", "limit": per_page, "start": start})
+            r = session.get(
+                f"{base}/items",
+                params={"format": "json", "limit": per_page, "start": start},
+            )
             if r.status_code != 200:
                 errors += 1
                 break
@@ -500,7 +561,9 @@ def remove_review_tags(
                 tags = data.get("tags", []) or []
                 orig_len = len(tags)
                 # Verwijder alle tags met prefix tag_prefix
-                tags_new = [t for t in tags if not t.get("tag", "").startswith(tag_prefix)]
+                tags_new = [
+                    t for t in tags if not t.get("tag", "").startswith(tag_prefix)
+                ]
                 if len(tags_new) < orig_len:
                     if dry_run:
                         removed += orig_len - len(tags_new)

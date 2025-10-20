@@ -1,4 +1,5 @@
 """CLI smoke test for Typer app."""
+
 from typer.testing import CliRunner
 from espace.zotsync.__main__ import app
 

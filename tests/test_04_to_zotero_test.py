@@ -1,4 +1,11 @@
 from __future__ import annotations
+from pathlib import Path
+import os
+import pandas as pd
+import pytest
+import requests
+from espace.zotsync.zot_import import apply_asreview_decisions
+
 """
 Integration test: write ASReview decisions into a real Zotero library and
 verify the review:* tags are actually set on the matching items.
@@ -10,14 +17,6 @@ Run explicitly with:
 Credentials should be provided via env vars:
   ZOTERO_API_KEY, ZOTERO_LIBRARY_ID, ZOTERO_LIBRARY_TYPE (users|groups)
 """
-
-from pathlib import Path
-import os
-import pandas as pd
-import pytest
-import requests
-
-from espace.zotsync.zot_import import apply_asreview_decisions
 
 ZOTERO_HOST = "https://api.zotero.org"
 
@@ -61,7 +60,9 @@ def _remove_all_review_tags(base: str, headers: dict, *, limit: int = 100) -> in
         for it in items:
             data = it.get("data", {})
             tags = data.get("tags", []) or []
-            new_tags = [tg for tg in tags if not str(tg.get("tag", "")).startswith("review:")]
+            new_tags = [
+                tg for tg in tags if not str(tg.get("tag", "")).startswith("review:")
+            ]
             if len(new_tags) != len(tags):
                 data["tags"] = new_tags
                 key = it.get("key")
@@ -115,7 +116,9 @@ def test_write_to_real_zotero(tmp_path: Path):
     library_type = os.getenv("ZOTERO_LIBRARY_TYPE", "users")  # or "groups"
 
     if not api_key or not library_id:
-        pytest.skip("Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID (and optionally ZOTERO_LIBRARY_TYPE) to run this test.")
+        pytest.skip(
+            "Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID (and optionally ZOTERO_LIBRARY_TYPE) to run this test."
+        )
 
     # --- Prepare base + headers once ---
     base = _base_url(library_type, library_id)
@@ -143,7 +146,12 @@ def test_write_to_real_zotero(tmp_path: Path):
     it_title = _get_first_json(
         f"{base}/items",
         hdrs,
-        {"q": title_excluded, "qmode": "titleCreatorYear", "format": "json", "limit": 25},
+        {
+            "q": title_excluded,
+            "qmode": "titleCreatorYear",
+            "format": "json",
+            "limit": 25,
+        },
     )
     assert it_title is not None, "Title item not found via API"
     tags_title = _tags_set(it_title.get("data", {}).get("tags", []))
@@ -155,7 +163,12 @@ def test_write_to_real_zotero(tmp_path: Path):
     it_incl = _get_first_json(
         f"{base}/items",
         hdrs,
-        {"q": title_included, "qmode": "titleCreatorYear", "format": "json", "limit": 25},
+        {
+            "q": title_included,
+            "qmode": "titleCreatorYear",
+            "format": "json",
+            "limit": 25,
+        },
     )
     assert it_incl is not None, "Included title item not found via API"
     tags_incl = _tags_set(it_incl.get("data", {}).get("tags", []))
@@ -163,9 +176,9 @@ def test_write_to_real_zotero(tmp_path: Path):
     assert "review:Time=2025-09-07 11:00" in tags_incl
     assert "review:Reason=keuze: opnemen" in tags_incl
 
-
     # Print for manual inspection when running -s
     print("Integration test result:", res)
+
 
 @pytest.mark.integration
 @pytest.mark.skipif(True, reason="Only for manual testing")
@@ -208,7 +221,9 @@ def test_zot_import_csv_counts():
     library_type = os.getenv("ZOTERO_LIBRARY_TYPE", "users")
 
     if not api_key or not library_id:
-        pytest.skip("Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID (and optionally ZOTERO_LIBRARY_TYPE) to update Zotero.")
+        pytest.skip(
+            "Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID (and optionally ZOTERO_LIBRARY_TYPE) to update Zotero."
+        )
 
     base = _base_url(library_type, library_id)
     hdrs = _headers(api_key)
@@ -227,10 +242,12 @@ def test_zot_import_csv_counts():
     )
     print("[update] Decisions written to Zotero:", res)
 
+
 @pytest.mark.integration
 def test_lookup_test_library_in_real_zotero_db():
     import sqlite3
     import os
+
     db_path = os.path.expanduser("~/Zotero/zotero.sqlite")
     if not os.path.exists(db_path):
         pytest.skip("Geen Zotero database gevonden op ~/Zotero/zotero.sqlite")
@@ -244,6 +261,7 @@ def test_lookup_test_library_in_real_zotero_db():
 
     assert row is not None, "Zotero-bibliotheek met naam 'Test' niet gevonden"
     print(f"Test library gevonden: libraryID={row[0]}, name={row[1]}")
+
 
 @pytest.mark.integration
 def test_write_to_sqlite_test_library(tmp_path: Path):
@@ -262,7 +280,7 @@ def test_write_to_sqlite_test_library(tmp_path: Path):
     conn.close()
     if not row:
         pytest.skip("Groepsbibliotheek 'Test' niet gevonden in de lokale database")
-    lib_id = row[0]
+    # lib_id = row[0]
 
     # Prepare ASReview testdata
     title_included = "Automated translation from domain knowledge to software model: EXCEL2UML in the tunneling domain"
@@ -306,10 +324,12 @@ def test_write_to_sqlite_test_library(tmp_path: Path):
     assert res["not_found"] == 0
     assert res["errors"] == 0
 
+
 @pytest.mark.integration
 def test_zot_import_csv_counts_sqlite():
     """Read test data from from_asreview.csv and verify label counts and apply to local Zotero sqlite database."""
     import sqlite3
+
     db_path = os.path.expanduser("~/Zotero/zotero.sqlite")
     if not os.path.exists(db_path):
         pytest.skip("Geen Zotero database gevonden op ~/Zotero/zotero.sqlite")
@@ -346,7 +366,7 @@ def test_zot_import_csv_counts_sqlite():
     conn.close()
     if not row:
         pytest.skip("Groepsbibliotheek 'Test' niet gevonden in de lokale database")
-    lib_id = row[0]
+    # lib_id = row[0]
 
     # Pas beslissingen toe op database
     res = apply_asreview_decisions(
@@ -361,4 +381,3 @@ def test_zot_import_csv_counts_sqlite():
 
     assert res["updated"] >= 30
     assert res["errors"] == 0
-

@@ -1,5 +1,3 @@
-
-
 from pathlib import Path
 
 # Zotero tag-prefixes used in ASReview integration

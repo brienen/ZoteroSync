@@ -2,6 +2,7 @@
 
 We mock Zotero HTTP calls to avoid network access.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,7 +17,9 @@ from espace.zotsync.zot_import import apply_asreview_decisions
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int = 200, data: Any | None = None, text: str = "") -> None:
+    def __init__(
+        self, status_code: int = 200, data: Any | None = None, text: str = ""
+    ) -> None:
         self.status_code = status_code
         self._data = data
         self.text = text
@@ -68,12 +71,12 @@ def fake_env(monkeypatch):
     item_by_title_has_doi = {
         "key": "ABCD1",
         "version": 10,
-        "data": {"title": "has doi", "date": "2020" , "tags": []},
+        "data": {"title": "has doi", "date": "2020", "tags": []},
     }
     item_by_title = {
         "key": "WXYZ2",
         "version": 3,
-        "data": {"title": "no doi title", "date": "2021" , "tags": []},
+        "data": {"title": "no doi title", "date": "2021", "tags": []},
     }
 
     # Index responses for GET /items?q=...
@@ -100,8 +103,20 @@ def asr_csv_tmp(tmp_path: Path) -> Path:
     """Create a minimal review export CSV for tests."""
     df = pd.DataFrame(
         [
-            {"title": "has doi", "year": "2020", "asreview_label": 1, "asreview_time": "2025-09-07T10:00:00Z", "asreview_note": "looks relevant"},
-            {"title": "no doi title", "year": "2021", "asreview_label": 0, "asreview_time": "2025-09-07T10:05:00Z", "asreview_note": "out of scope"},
+            {
+                "title": "has doi",
+                "year": "2020",
+                "asreview_label": 1,
+                "asreview_time": "2025-09-07T10:00:00Z",
+                "asreview_note": "looks relevant",
+            },
+            {
+                "title": "no doi title",
+                "year": "2021",
+                "asreview_label": 0,
+                "asreview_time": "2025-09-07T10:05:00Z",
+                "asreview_note": "out of scope",
+            },
         ]
     )
     p = tmp_path / "asr.csv"
@@ -131,7 +146,7 @@ def test_zot_import_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Path):
         library_id="6143565",
         library_type="groups",
         dry_run=False,
-        db_path=None
+        db_path=None,
     )
 
     # One PUT per matched item (we have 2 rows)
@@ -153,7 +168,9 @@ def test_zot_import_updates_and_tags(fake_env: _FakeSession, asr_csv_tmp: Path):
     # included/excluded should be set appropriately
     assert "review:Decision=included" in s1
     assert "review:Time=2025-09-07 10:00" in s1
-    assert "review:Reason=looks relevant" in s1 or "review:Reason=" in s1  # tolerate empty if mapping differs
+    assert (
+        "review:Reason=looks relevant" in s1 or "review:Reason=" in s1
+    )  # tolerate empty if mapping differs
     assert "review:Decision=excluded" in s2
     assert "review:Time=2025-09-07 10:05" in s2
     assert "review:Reason=out of scope" in s2
@@ -165,7 +182,8 @@ def test_zot_import_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
     db_path = tmp_path / "zotero.sqlite"
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.executescript("""
+    cur.executescript(
+        """
         CREATE TABLE libraries (libraryID INTEGER);
         INSERT INTO libraries (libraryID) VALUES (1);
 
@@ -193,7 +211,8 @@ def test_zot_import_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
         -- Nieuwe tabellen voor review-tags
         CREATE TABLE tags (tagID INTEGER PRIMARY KEY, name TEXT);
         CREATE TABLE itemTags (itemID INTEGER, tagID INTEGER, type INTEGER);
-    """)    
+    """
+    )
     conn.commit()
     conn.close()
 

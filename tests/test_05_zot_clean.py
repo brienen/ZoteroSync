@@ -5,12 +5,12 @@ import os
 import espace.zotsync.const as const
 
 from dotenv import load_dotenv
+from espace.zotsync import zot_import
+
 
 @pytest.fixture(autouse=True)
 def load_env():
     load_dotenv()
-
-from espace.zotsync import zot_import
 
 
 def _make_sqlite_db(tmp_path: Path) -> Path:
@@ -69,7 +69,7 @@ def count_review_tags(db_path: Path, group_id: int, tag_prefix: str) -> int:
     group = group[0]
 
     cur.execute(
-        f"""
+        """
         SELECT COUNT(*)
         FROM itemTags it
         JOIN tags t ON it.tagID = t.tagID
@@ -86,7 +86,7 @@ def count_review_tags(db_path: Path, group_id: int, tag_prefix: str) -> int:
 def test_remove_review_tags_sqlite(tmp_path):
 
     group_id = os.getenv("ZOTERO_LIBRARY_ID")
-    #db_path = _make_sqlite_db(tmp_path)
+    # db_path = _make_sqlite_db(tmp_path)
     db_path = const.DEFAULT_SQLITE_PATH
     # Tel het aantal review-tags gekoppeld aan items vóór verwijdering
     initial_count = count_review_tags(db_path, group_id, const.REVIEW_PREFIX)
@@ -95,7 +95,7 @@ def test_remove_review_tags_sqlite(tmp_path):
         api_key="unused",
         library_id=group_id,  # groupID → wordt naar libraryID 1 vertaald
         library_type="groups",
-        #db_path=db_path,
+        # db_path=db_path,
     )
     assert result["removed"] == initial_count
     assert result["errors"] == 0

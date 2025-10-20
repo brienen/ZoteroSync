@@ -1,5 +1,3 @@
-
-
 """Pytest configuration: load environment variables from .env automatically (robust).
 
 Search order:
@@ -8,6 +6,7 @@ Search order:
   3) tests/.env (fallback)
 Also respects explicit DOTENV_PATH if set.
 """
+
 from __future__ import annotations
 
 import os
@@ -63,7 +62,10 @@ def pytest_configure(config):
         print("[conftest] Loaded from:", loaded_from)
         print(
             "[conftest] Effective env:",
-            "ZOTERO_LIBRARY_TYPE=", os.getenv("ZOTERO_LIBRARY_TYPE"),
-            "ZOTERO_LIBRARY_ID=", os.getenv("ZOTERO_LIBRARY_ID"),
-            "ZOTERO_API_KEY set=", bool(os.getenv("ZOTERO_API_KEY")),
+            "ZOTERO_LIBRARY_TYPE=",
+            os.getenv("ZOTERO_LIBRARY_TYPE"),
+            "ZOTERO_LIBRARY_ID=",
+            os.getenv("ZOTERO_LIBRARY_ID"),
+            "ZOTERO_API_KEY set=",
+            bool(os.getenv("ZOTERO_API_KEY")),
         )
