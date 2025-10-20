@@ -9,6 +9,16 @@ from .zot_import import remove_review_tags
 
 import espace.zotsync.const as const
 
+# Load environment variables from a .env file if present
+try:
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    load_dotenv = None  # type: ignore
+if load_dotenv:
+    # Do not override already-set environment variables
+    load_dotenv(override=False)
+    typer.echo("Loaded environment variables from .env file", err=True)
+
 app = typer.Typer(help="Zotero ↔ ASReview CLI")
 
 
@@ -36,15 +46,24 @@ def main(
 @app.command(name="export", help="Exporteer Zotero bibliotheek naar ASReview CSV")
 def zot_export_hyphen(
     out_csv: str = typer.Argument(..., help="Output CSV file"),
-    library_id: str = typer.Option(..., help="Zotero library ID"),
+    library_id: str = typer.Option(
+        ..., help="Zotero library ID", envvar="ZOTSYNC_LIBRARY_ID"
+    ),
     library_type: str = typer.Option(
-        "groups", help="Zotero library type (users or groups)"
+        "groups",
+        help="Zotero library type (users or groups)",
+        envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
     deduplicate: bool = typer.Option(
-        False, "--dedupe/--no-dedupe", help="(De)activeer deduplicatie (default: uit)"
+        False,
+        "--dedupe/--no-dedupe",
+        help="(De)activeer deduplicatie (default: uit)",
+        envvar="ZOTSYNC_DEDUPLICATE",
     ),
     db_path: str = typer.Option(
-        const.DEFAULT_SQLITE_PATH, help="Pad naar SQLite database"
+        const.DEFAULT_SQLITE_PATH,
+        help="Pad naar SQLite database",
+        envvar="ZOTSYNC_DB_PATH",
     ),
 ):
     make_asreview_csv_from_db(
@@ -64,20 +83,34 @@ def zot_export_hyphen(
 def zot_import_hyphen(
     asr_csv: str = typer.Argument(..., help="ASReview CSV met 'included' kolom"),
     api_key: str = typer.Option(
-        None, help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait."
+        None,
+        help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait.",
+        envvar="ZOTSYNC_API_KEY",
     ),
-    library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
+    library_id: str = typer.Option(
+        ..., help="Zotero UserID of GroupID", envvar="ZOTSYNC_LIBRARY_ID"
+    ),
     library_type: str = typer.Option(
-        "groups", help="Zotero library type (users or groups)"
+        "groups",
+        help="Zotero library type (users or groups)",
+        envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
-    tag_prefix: str = typer.Option("ASReview", help="Prefix voor beslissings-tags"),
+    tag_prefix: str = typer.Option(
+        "ASReview", help="Prefix voor beslissings-tags", envvar="ZOTSYNC_TAG_PREFIX"
+    ),
     fuzzy_threshold: float = typer.Option(
-        0.90, help="Drempel voor fuzzy titelmatch (0-1)"
+        0.90,
+        help="Drempel voor fuzzy titelmatch (0-1)",
+        envvar="ZOTSYNC_FUZZY_THRESHOLD",
     ),
     db_path: str = typer.Option(
-        const.DEFAULT_SQLITE_PATH, help="Pad naar SQLite database"
+        const.DEFAULT_SQLITE_PATH,
+        help="Pad naar SQLite database",
+        envvar="ZOTSYNC_DB_PATH",
     ),
-    dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
+    dry_run: bool = typer.Option(
+        False, help="Niet wegschrijven; alleen tellen", envvar="ZOTSYNC_DRY_RUN"
+    ),
 ):
     res = apply_asreview_decisions(
         asr_csv=asr_csv,
@@ -101,20 +134,34 @@ def zot_import_hyphen(
 )
 def zot_clean_hyphen(
     api_key: str = typer.Option(
-        None, help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait."
+        None,
+        help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait.",
+        envvar="ZOTSYNC_API_KEY",
     ),
-    library_id: str = typer.Option(..., help="Zotero UserID of GroupID"),
+    library_id: str = typer.Option(
+        ..., help="Zotero UserID of GroupID", envvar="ZOTSYNC_LIBRARY_ID"
+    ),
     library_type: str = typer.Option(
-        "groups", help="Zotero library type (users or groups)"
+        "groups",
+        help="Zotero library type (users or groups)",
+        envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
-    tag_prefix: str = typer.Option("ASReview", help="Prefix voor beslissings-tags"),
+    tag_prefix: str = typer.Option(
+        "ASReview", help="Prefix voor beslissings-tags", envvar="ZOTSYNC_TAG_PREFIX"
+    ),
     fuzzy_threshold: float = typer.Option(
-        0.90, help="Drempel voor fuzzy titelmatch (0-1)"
+        0.90,
+        help="Drempel voor fuzzy titelmatch (0-1)",
+        envvar="ZOTSYNC_FUZZY_THRESHOLD",
     ),
     db_path: str = typer.Option(
-        const.DEFAULT_SQLITE_PATH, help="Pad naar SQLite database"
+        const.DEFAULT_SQLITE_PATH,
+        help="Pad naar SQLite database",
+        envvar="ZOTSYNC_DB_PATH",
     ),
-    dry_run: bool = typer.Option(False, help="Niet wegschrijven; alleen tellen"),
+    dry_run: bool = typer.Option(
+        False, help="Niet wegschrijven; alleen tellen", envvar="ZOTSYNC_DRY_RUN"
+    ),
 ):
     res = remove_review_tags(
         api_key=api_key,
