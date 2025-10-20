@@ -11,7 +11,7 @@ DECISION_INCLUDED = "included"
 DECISION_EXCLUDED = "excluded"
 
 # Default SQLite database location
-DEFAULT_SQLITE_PATH = Path.home() / "Zotero" / "zotero.sqlite"
+DEFAULT_SQLITE_PATH = Path.home() / "kDrive" / "Zotero" / "zotero.sqlite"
 
 # Supported library types
 LIBRARY_TYPE_USER = "users"

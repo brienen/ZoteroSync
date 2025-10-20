@@ -4,6 +4,7 @@ import os
 import pandas as pd
 import pytest
 import requests
+from espace.zotsync import const
 from espace.zotsync.zot_import import apply_asreview_decisions
 
 """
@@ -248,7 +249,7 @@ def test_lookup_test_library_in_real_zotero_db():
     import sqlite3
     import os
 
-    db_path = os.path.expanduser("~/Zotero/zotero.sqlite")
+    db_path = const.DEFAULT_SQLITE_PATH
     if not os.path.exists(db_path):
         pytest.skip("Geen Zotero database gevonden op ~/Zotero/zotero.sqlite")
 
@@ -330,7 +331,7 @@ def test_zot_import_csv_counts_sqlite():
     """Read test data from from_asreview.csv and verify label counts and apply to local Zotero sqlite database."""
     import sqlite3
 
-    db_path = os.path.expanduser("~/Zotero/zotero.sqlite")
+    db_path = const.DEFAULT_SQLITE_PATH
     if not os.path.exists(db_path):
         pytest.skip("Geen Zotero database gevonden op ~/Zotero/zotero.sqlite")
 
