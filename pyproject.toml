@@ -26,6 +26,7 @@ requests = "^2.32.0"
 python-dateutil = "^2.9.0"
 # optioneel voor betere fuzzy matching:
 rapidfuzz = "^3.9.0"
+click = "8.1.3"
 
 [tool.poetry.group.dev.dependencies]
 Pygments = ">=2.10.0"

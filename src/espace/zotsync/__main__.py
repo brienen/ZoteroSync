@@ -1,7 +1,6 @@
 """Command-line interface."""
 
 import typer
-import click
 from pathlib import Path
 
 from .zot_export import make_asreview_csv_from_db
@@ -20,28 +19,28 @@ if load_dotenv:
     load_dotenv(override=False)
     typer.echo("Loaded environment variables from .env file", err=True)
 
+
+def _version_callback(value: bool):
+    if value:
+        typer.echo("zotsync, version 0.0.1")
+        raise typer.Exit()
+
+
 app = typer.Typer(help="Zotero ↔ ASReview CLI")
 
 
 @app.callback()
 def main(
     version: bool = typer.Option(
-        None,
+        False,
         "--version",
         "-v",
         help="Show the version and exit.",
         is_eager=True,
-        callback=lambda value: (
-            typer.echo("zotsync, version 0.0.1") if value else None
-        ),
+        callback=_version_callback,
     )
 ):
-    ctx = click.get_current_context(silent=True)
-    if ctx and ctx.params.get("version"):
-        raise typer.Exit()
-    if not (ctx and ctx.invoked_subcommand):
-        typer.echo(app.get_help())
-        raise typer.Exit()
+    pass
 
 
 @app.command(name="export", help="Exporteer Zotero bibliotheek naar ASReview CSV")
@@ -57,7 +56,7 @@ def zot_export_hyphen(
     ),
     deduplicate: bool = typer.Option(
         False,
-        "--dedupe/--no-dedupe",
+        "--dedupe",
         help="(De)activeer deduplicatie (default: uit)",
         envvar="ZOTSYNC_DEDUPLICATE",
     ),
@@ -79,7 +78,7 @@ def zot_export_hyphen(
 
 @app.command(
     name="import",
-    help="Importeer ASReview beslissingen terug naar Zotero als review-tags ({const.REVIEW_DECISION_PREFIX}, {const.REVIEW_TIME_PREFIX}, {const.REVIEW_REASON_PREFIX})",
+    help=f"Importeer ASReview beslissingen terug naar Zotero als review-tags ({const.REVIEW_DECISION_PREFIX}, {const.REVIEW_TIME_PREFIX}, {const.REVIEW_REASON_PREFIX})",
 )
 def zot_import_hyphen(
     asr_csv: str = typer.Argument(..., help="ASReview CSV met 'included' kolom"),
@@ -93,7 +92,7 @@ def zot_import_hyphen(
     ),
     library_type: str = typer.Option(
         "groups",
-        help="Zotero library type (users or groups)",
+        help="Zotero library type (users of groups)",
         envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
     tag_prefix: str = typer.Option(
@@ -110,7 +109,10 @@ def zot_import_hyphen(
         envvar="ZOTSYNC_DB_PATH",
     ),
     dry_run: bool = typer.Option(
-        False, help="Niet wegschrijven; alleen tellen", envvar="ZOTSYNC_DRY_RUN"
+        False,
+        "--dry-run",
+        help="Niet wegschrijven; alleen tellen.",
+        is_flag=True,
     ),
 ):
     res = apply_asreview_decisions(
@@ -161,7 +163,10 @@ def zot_clean_hyphen(
         envvar="ZOTSYNC_DB_PATH",
     ),
     dry_run: bool = typer.Option(
-        False, help="Niet wegschrijven; alleen tellen", envvar="ZOTSYNC_DRY_RUN"
+        False,
+        "--dry-run",
+        help="Niet wegschrijven; alleen tellen.",
+        is_flag=True,
     ),
 ):
     res = remove_review_tags(
