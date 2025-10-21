@@ -2,6 +2,7 @@
 
 import typer
 import click
+from pathlib import Path
 
 from .zot_export import make_asreview_csv_from_db
 from .zot_import import apply_asreview_decisions
@@ -67,11 +68,11 @@ def zot_export_hyphen(
     ),
 ):
     make_asreview_csv_from_db(
-        out_csv=out_csv,
+        out_csv=Path(out_csv),
         library_id=library_id,
         library_type=library_type,
         deduplicate=deduplicate,
-        db_path=db_path,
+        db_path=Path(db_path),
     )
     typer.echo(f"ASReview CSV written to: {out_csv}")
 
@@ -113,13 +114,13 @@ def zot_import_hyphen(
     ),
 ):
     res = apply_asreview_decisions(
-        asr_csv=asr_csv,
+        asr_csv=Path(asr_csv),
         api_key=api_key,
         library_id=library_id,
         library_type=library_type,
         tag_prefix=tag_prefix,
         fuzzy_threshold=fuzzy_threshold,
-        db_path=db_path,
+        db_path=Path(db_path),
         dry_run=dry_run,
     )
     typer.secho(
@@ -170,7 +171,7 @@ def zot_clean_hyphen(
         tag_prefix=tag_prefix,
         fuzzy_threshold=fuzzy_threshold,
         dry_run=dry_run,
-        db_path=db_path,
+        db_path=Path(db_path),
     )
     typer.secho(
         f"[CLEANED] removed={res['removed']} errors={res['errors']}",
