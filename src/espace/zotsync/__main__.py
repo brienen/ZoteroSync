@@ -95,9 +95,6 @@ def zot_import_hyphen(
         help="Zotero library type (users of groups)",
         envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
-    tag_prefix: str = typer.Option(
-        "ASReview", help="Prefix voor beslissings-tags", envvar="ZOTSYNC_TAG_PREFIX"
-    ),
     fuzzy_threshold: float = typer.Option(
         0.90,
         help="Drempel voor fuzzy titelmatch (0-1)",
@@ -120,7 +117,6 @@ def zot_import_hyphen(
         api_key=api_key,
         library_id=library_id,
         library_type=library_type,
-        tag_prefix=tag_prefix,
         fuzzy_threshold=fuzzy_threshold,
         db_path=Path(db_path),
         dry_run=dry_run,
@@ -149,9 +145,6 @@ def zot_clean_hyphen(
         help="Zotero library type (users or groups)",
         envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
-    tag_prefix: str = typer.Option(
-        "ASReview", help="Prefix voor beslissings-tags", envvar="ZOTSYNC_TAG_PREFIX"
-    ),
     fuzzy_threshold: float = typer.Option(
         0.90,
         help="Drempel voor fuzzy titelmatch (0-1)",
@@ -173,7 +166,6 @@ def zot_clean_hyphen(
         api_key=api_key,
         library_id=library_id,
         library_type=library_type,
-        tag_prefix=tag_prefix,
         fuzzy_threshold=fuzzy_threshold,
         dry_run=dry_run,
         db_path=Path(db_path),

@@ -243,7 +243,6 @@ def apply_asreview_decisions(
     api_key: str,
     library_id: str,
     library_type: str = "groups",
-    # tag_prefix is unused, all tags start with 'review:'
     fuzzy_threshold: float = 0.90,
     dry_run: bool = False,
     zotero_host: str = "http://localhost:23119",
@@ -268,6 +267,9 @@ def apply_asreview_decisions(
     """
     if db_path and not db_path.exists():
         raise FileNotFoundError(f"SQLite database not found at: {db_path}")
+
+    if asr_csv is None or not asr_csv.exists():
+        raise FileNotFoundError(f"ASReview CSV not found at: {asr_csv}")
 
     df = pd.read_csv(asr_csv)
 
@@ -337,6 +339,9 @@ def apply_asreview_decisions(
             items = _find_items_by_title_year_sqlite(
                 db_path, title, year, library_id, threshold=fuzzy_threshold
             )
+            if len(items) == 0:
+                report.not_found += 1
+                continue
             if not tags_to_set:
                 continue
             import sqlite3
@@ -399,10 +404,6 @@ def apply_asreview_decisions(
                 items = _search_fuzzy(
                     session, base, title, year, threshold=fuzzy_threshold
                 )
-
-        if not items:
-            report.not_found += 1
-            continue
 
         if not tags_to_set and not dry_run:
             # No tags to set and not dry run, skip update but count as not found?

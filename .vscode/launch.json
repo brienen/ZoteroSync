@@ -64,6 +64,21 @@
       "args": ["tests/test_06_dotenv.py"],
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal"
+    },
+    {
+      "name": "zotsync import: LitReview CSV",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "espace.zotsync",
+      "args": [
+        "import",
+        "--library-id",
+        "6132665",
+        "tests/data/asreview_relevant+irrelevant+not_seen_LitReview_Government_Semantic_Interoperability.csv"
+      ],
+      "envFile": "${workspaceFolder}/.env",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
     }
   ]
 }
