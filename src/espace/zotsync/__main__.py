@@ -46,12 +46,12 @@ def main(
 @app.command(name="export", help="Exporteer Zotero bibliotheek naar ASReview CSV")
 def zot_export_hyphen(
     out_csv: str = typer.Argument(..., help="Output CSV file"),
-    library_id: str = typer.Option(
-        ..., help="Zotero library ID", envvar="ZOTSYNC_LIBRARY_ID"
+    library_id: str | None = typer.Option(
+        None, "--library-id", help="Zotero library ID", envvar="ZOTSYNC_LIBRARY_ID"
     ),
     library_type: str = typer.Option(
         "groups",
-        help="Zotero library type (users or groups)",
+        help="Zotero library type (users of groups)",
         envvar="ZOTSYNC_LIBRARY_TYPE",
     ),
     deduplicate: bool = typer.Option(
@@ -66,6 +66,12 @@ def zot_export_hyphen(
         envvar="ZOTSYNC_DB_PATH",
     ),
 ):
+    if not library_id:
+        typer.secho(
+            "Missing library-id: provide --library-id or set ZOTSYNC_LIBRARY_ID in your environment/.env",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
     make_asreview_csv_from_db(
         out_csv=Path(out_csv),
         library_id=library_id,
@@ -87,8 +93,11 @@ def zot_import_hyphen(
         help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait.",
         envvar="ZOTSYNC_API_KEY",
     ),
-    library_id: str = typer.Option(
-        ..., help="Zotero UserID of GroupID", envvar="ZOTSYNC_LIBRARY_ID"
+    library_id: str | None = typer.Option(
+        None,
+        "--library-id",
+        help="Zotero UserID of GroupID",
+        envvar="ZOTSYNC_LIBRARY_ID",
     ),
     library_type: str = typer.Option(
         "groups",
@@ -112,6 +121,12 @@ def zot_import_hyphen(
         is_flag=True,
     ),
 ):
+    if not library_id:
+        typer.secho(
+            "Missing library-id: provide --library-id or set ZOTSYNC_LIBRARY_ID in your environment .env",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
     res = apply_asreview_decisions(
         asr_csv=Path(asr_csv),
         api_key=api_key,
@@ -137,8 +152,11 @@ def zot_clean_hyphen(
         help="Zotero API key. Alleen noodzakelijk als Zotero niet lokaal draait.",
         envvar="ZOTSYNC_API_KEY",
     ),
-    library_id: str = typer.Option(
-        ..., help="Zotero UserID of GroupID", envvar="ZOTSYNC_LIBRARY_ID"
+    library_id: str | None = typer.Option(
+        None,
+        "--library-id",
+        help="Zotero UserID of GroupID",
+        envvar="ZOTSYNC_LIBRARY_ID",
     ),
     library_type: str = typer.Option(
         "groups",
@@ -162,6 +180,12 @@ def zot_clean_hyphen(
         is_flag=True,
     ),
 ):
+    if not library_id:
+        typer.secho(
+            "Missing library-id: provide --library-id or set ZOTSYNC_LIBRARY_ID in your environment/.env",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=2)
     res = remove_review_tags(
         api_key=api_key,
         library_id=library_id,

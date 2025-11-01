@@ -23,6 +23,7 @@ ASR_YEAR_COL = "year"
 ASR_LABEL_COL = "asreview_label"
 ASR_TIME_COL = "asreview_time"
 ASR_NOTE_COL = "asreview_note"
+ASR_TAG_PREFIX = "asreview_tag_"
 
 # Tag cleaning prefix
 TAG_PREFIX_REVIEW = "review:"

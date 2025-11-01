@@ -273,9 +273,9 @@ def apply_asreview_decisions(
 
     df = pd.read_csv(asr_csv)
 
-    df["asreview_label"] = df.get("asreview_label", "")
-    df["asreview_time"] = df.get("asreview_time", "")
-    df["asreview_note"] = df.get("asreview_note", "")
+    df[const.ASR_LABEL_COL] = df.get(const.ASR_LABEL_COL, "")
+    df[const.ASR_TIME_COL] = df.get(const.ASR_TIME_COL, "")
+    df[const.ASR_NOTE_COL] = df.get(const.ASR_NOTE_COL, "")
 
     if "title" in df.columns:
         df["title"] = df["title"].map(_norm)
@@ -315,14 +315,14 @@ def apply_asreview_decisions(
         # doi is not used for matching anymore per updated docstring, but keep it normalized anyway
         # doi = _norm(r.get("doi", "").lower())
 
-        time_value = _format_review_time(r.get("asreview_time", ""))
-        raw_reason = r.get("asreview_note", "")
+        time_value = _format_review_time(r.get(const.ASR_TIME_COL, ""))
+        raw_reason = r.get(const.ASR_NOTE_COL, "")
         try:
             reason_value = "" if pd.isna(raw_reason) else _norm(raw_reason)
         except Exception:
             reason_value = _norm(raw_reason)
 
-        decision_value = label_to_decision(r.get("asreview_label", ""))
+        decision_value = label_to_decision(r.get(const.ASR_LABEL_COL, ""))
 
         tags_to_set = []
         if decision_value:
@@ -333,6 +333,14 @@ def apply_asreview_decisions(
             # Use Reason= instead of ReasonDenied=, only if non-empty
             if reason_value:
                 tags_to_set.append(f"{const.REVIEW_REASON_PREFIX}{reason_value}")
+        # Add tags for any columns that start with 'asreview_tag'
+        for col in df.columns:
+            if col.startswith(const.ASR_TAG_PREFIX):
+                sval = r.get(col, "")
+                if pd.isna(sval) or sval == "":
+                    continue
+                tag_name = col[len(const.ASR_TAG_PREFIX) :]
+                tags_to_set.append(f"{const.TAG_PREFIX_REVIEW}{tag_name}={sval}")
 
         # Zoek items (alle matches)
         if use_sqlite:

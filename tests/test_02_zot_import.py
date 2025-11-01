@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from espace.zotsync.zot_import import apply_asreview_decisions
+import espace.zotsync.const as const
 
 
 class _FakeResponse:
@@ -106,16 +107,16 @@ def asr_csv_tmp(tmp_path: Path) -> Path:
             {
                 "title": "has doi",
                 "year": "2020",
-                "asreview_label": 1,
-                "asreview_time": "2025-09-07T10:00:00Z",
-                "asreview_note": "looks relevant",
+                const.ASR_LABEL_COL: 1,
+                const.ASR_TIME_COL: "2025-09-07T10:00:00Z",
+                const.ASR_NOTE_COL: "looks relevant",
             },
             {
                 "title": "no doi title",
                 "year": "2021",
-                "asreview_label": 0,
-                "asreview_time": "2025-09-07T10:05:00Z",
-                "asreview_note": "out of scope",
+                const.ASR_LABEL_COL: 0,
+                const.ASR_TIME_COL: "2025-09-07T10:05:00Z",
+                const.ASR_NOTE_COL: "out of scope",
             },
         ]
     )
@@ -231,3 +232,50 @@ def test_zot_import_dry_run_sqlite(asr_csv_tmp: Path, tmp_path: Path):
     assert res["updated"] == 2
     assert res["not_found"] == 0
     assert res["errors"] == 0
+
+
+def test_zot_import_adds_asreview_tag_columns(fake_env: _FakeSession, tmp_path: Path):
+    # Create a CSV with extra ASReview tag columns. Only columns starting with
+    # 'asreview_tag' should be converted to review:<name>=<value> (prefix removed).
+    df = pd.DataFrame(
+        [
+            {
+                "title": "has doi",
+                "year": "2020",
+                const.ASR_LABEL_COL: 1,
+                const.ASR_TIME_COL: "2025-09-07T10:10:00Z",
+                const.ASR_NOTE_COL: "extra tags test",
+                # Extra columns that should become review:category=... and review:priority=...
+                "asreview_tag_category": "Systematic",
+                "asreview_tag_priority": "high",
+                # This one is empty and should be ignored
+                "asreview_tag_empty": "",
+            }
+        ]
+    )
+    p = tmp_path / "asr_extra_tags.csv"
+    df.to_csv(p, index=False)
+
+    res = apply_asreview_decisions(
+        asr_csv=p,
+        api_key="dummy",
+        library_id="6143565",
+        library_type="groups",
+        dry_run=False,
+        db_path=None,
+    )
+
+    # Expect exactly one update and one PUT call recorded
+    assert res["updated"] == 1
+    assert res["not_found"] == 0
+    assert res["errors"] == 0
+    assert len(fake_env.put_calls) >= 1
+
+    payload = fake_env.put_calls[-1]["payload"]["data"]["tags"]
+    tag_set = {t.get("tag") for t in payload}
+
+    # Check that the prefix is removed and values are propagated
+    assert "review:category=Systematic" in tag_set
+    assert "review:priority=high" in tag_set
+    # Empty value should not yield a tag
+    assert not any(t.startswith("review:empty=") for t in tag_set)
